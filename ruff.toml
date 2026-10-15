@@ -1,0 +1,14 @@
+target-version = "py311"
+line-length = 120
+
+exclude = [
+    "__pycache__",
+    ".git",
+    ".venv",
+    "venv",
+]
+
+[lint]
+# Giữ bộ rule mặc định của ruff (E4, E7, E9, F) để CI ổn định,
+# không tự ý bật thêm rule có thể fail trên code hiện tại.
+select = ["E4", "E7", "E9", "F"]
