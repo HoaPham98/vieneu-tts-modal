@@ -6,21 +6,22 @@ on:
       - main
   workflow_dispatch:
 
-# Không cho phép 2 lần deploy chồng nhau lên cùng một environment.
+# Không cho phép 2 lần deploy chồng nhau.
 concurrency:
-  group: deploy-modal-dev
+  group: deploy-modal
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy (env: dev)
+    name: Deploy (production)
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+    # Không set MODAL_ENVIRONMENT: deploy thẳng vào environment mặc định ("main")
+    # của workspace, tức là production.
     env:
       MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-      MODAL_ENVIRONMENT: dev
 
     steps:
       - name: Checkout Repository

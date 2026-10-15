@@ -56,7 +56,7 @@ Deploy **VieNeu-TTS v3 Turbo** — engine TTS tiếng Việt (ONNX Runtime) — 
 ```
 .
 ├── modal_app.py                     # Toàn bộ app: image build, model loading, FastAPI routes
-├── .github/workflows/deploy-modal.yml  # CI/CD: push lên main ⇒ deploy lên Modal (env: dev)
+├── .github/workflows/deploy-modal.yml  # CI/CD: push lên main ⇒ deploy lên Modal (production)
 ├── ruff.toml                        # Cấu hình lint cho CI
 └── .gitignore
 ```
@@ -79,11 +79,11 @@ modal setup          # mở trình duyệt để xác thực với tài khoản 
 API key dùng để bảo vệ endpoint (`Authorization: Bearer <API_KEY>`). Nếu secret **không tồn tại**, app sẽ crash lúc khởi động vì `modal.Secret.from_name("vieneu-api-key")`.
 
 ```bash
-# Tạo secret trong environment "dev" (khớp với CI/CD)
-modal secret create vieneu-api-key API_KEY="doi-key-bao-mat-cua-ban" --env dev
+# Gói Starter dùng một environment duy nhất ("main") = production
+modal secret create vieneu-api-key API_KEY="doi-key-bao-mat-cua-ban"
 ```
 
-> Nếu bạn chỉ deploy vào environment `main` (mặc định), bỏ cờ `--env dev`.
+> Không cần cờ `--env`: secret sẽ nằm trong environment mặc định (`main`).
 > Để app chạy **không cần xác thực**, tạo secret với `API_KEY=""` — code sẽ tự bỏ qua bước kiểm tra.
 
 ### 3. Kiểm tra biến cấu hình trong `modal_app.py`
@@ -100,11 +100,8 @@ REQUIRE_INT8 = True   # True = chỉ nhận node CPU có VNNI (khuyến nghị)
 ### Deploy thủ công
 
 ```bash
-# Deploy vào environment "dev"
-modal deploy modal_app.py --env dev
-
-# Hoặc dùng biến môi trường
-MODAL_ENVIRONMENT=dev modal deploy modal_app.py
+# Deploy thẳng lên production (environment mặc định "main")
+modal deploy modal_app.py
 ```
 
 Lần deploy **đầu tiên** sẽ build image: cài `ffmpeg`, `espeak-ng`, `vieneu`, rồi chạy `download_models()` để tải sẵn trọng số v3 Turbo và gỡ toàn bộ symlink. Bước này mất **~10–20 phút**. Các lần deploy sau nhanh hơn nhiều nhờ cache layer của Modal.
@@ -112,20 +109,20 @@ Lần deploy **đầu tiên** sẽ build image: cài `ffmpeg`, `espeak-ng`, `vie
 Khi xong, CLI in ra URL dạng:
 
 ```
-https://<workspace>[-<env-suffix>]--vieneu-tts-v3-turbo-web-app.modal.run
+https://<workspace>--vieneu-tts-v3-turbo-web-app.modal.run
 ```
 
 ### Chạy thử tạm thời (không deploy chính thức)
 
 ```bash
 # Tạo app ephemeral có URL -dev, tự tắt khi Ctrl+C
-modal serve modal_app.py --env dev
+modal serve modal_app.py
 ```
 
 ### Xem log & quản lý
 
 ```bash
-modal app list --env dev              # Liệt kê app đã deploy
+modal app list                        # Liệt kê app đã deploy
 modal app logs vieneu-tts-v3-turbo    # Xem log realtime
 modal app stop vieneu-tts-v3-turbo    # Dừng app
 ```
@@ -137,7 +134,7 @@ modal app stop vieneu-tts-v3-turbo    # Dừng app
 Đặt biến cho tiện:
 
 ```bash
-export BASE_URL="https://<workspace>-dev--vieneu-tts-v3-turbo-web-app.modal.run"
+export BASE_URL="https://<workspace>--vieneu-tts-v3-turbo-web-app.modal.run"
 export API_KEY="doi-key-bao-mat-cua-ban"
 ```
 
@@ -299,7 +296,7 @@ Repo kèm workflow `.github/workflows/deploy-modal.yml`: mỗi lần push lên n
 2. Cài Python 3.11 + `ruff` + `modal`
 3. `python -m py_compile modal_app.py` (kiểm tra cú pháp)
 4. `ruff check modal_app.py` (lint)
-5. `modal deploy modal_app.py` vào environment **`dev`**
+5. `modal deploy modal_app.py` → **production** (environment mặc định `main`)
 
 ### Thiết lập
 
@@ -316,10 +313,10 @@ Repo → *Settings* → *Secrets and variables* → *Actions* → **New reposito
 | `MODAL_TOKEN_ID` | Token ID vừa tạo |
 | `MODAL_TOKEN_SECRET` | Token Secret vừa tạo |
 
-**Bước 3 — Đảm bảo Modal Secret `vieneu-api-key` tồn tại trong environment `dev`**
+**Bước 3 — Đảm bảo Modal Secret `vieneu-api-key` tồn tại (production)**
 
 ```bash
-modal secret create vieneu-api-key API_KEY="doi-key-bao-mat-cua-ban" --env dev
+modal secret create vieneu-api-key API_KEY="doi-key-bao-mat-cua-ban"
 ```
 
 **Bước 4 — Push**
@@ -332,7 +329,7 @@ git push origin main
 
 Theo dõi tiến trình ở tab **Actions** của repo. Job có `timeout-minutes: 60` để đủ thời gian build image lần đầu.
 
-> **Đổi environment:** sửa biến `MODAL_ENVIRONMENT` trong workflow (ví dụ `prod`) và nhớ tạo secret `vieneu-api-key` tương ứng ở environment đó.
+> ⚠️ **Lưu ý:** workflow deploy thẳng vào **production** mỗi lần push lên `main`. Gói Starter chỉ có 1 environment, không có `dev`/`staging` tách biệt — hãy test bằng `modal serve modal_app.py` (chạy local, tạo URL tạm `-dev`) trước khi merge vào `main`. Ngoài ra gói Starter **không có deployment rollback** (tính năng đó chỉ có từ gói Team).
 
 ---
 
