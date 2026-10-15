@@ -56,6 +56,7 @@ Deploy **VieNeu-TTS v3 Turbo** — engine TTS tiếng Việt (ONNX Runtime) — 
 ```
 .
 ├── modal_app.py                     # Toàn bộ app: image build, model loading, FastAPI routes
+├── requirements.txt                 # Deps cho CI/local (modal CLI, ruff) — deps runtime nằm trong image của modal_app.py
 ├── .github/workflows/deploy-modal.yml  # CI/CD: push lên main ⇒ deploy lên Modal (production)
 ├── ruff.toml                        # Cấu hình lint cho CI
 └── .gitignore
@@ -293,7 +294,7 @@ Nếu vượt hạn mức credit, compute sẽ **tạm dừng** cho tới chu k�
 Repo kèm workflow `.github/workflows/deploy-modal.yml`: mỗi lần push lên nhánh `main` (hoặc chạy tay qua `workflow_dispatch`) sẽ:
 
 1. Checkout code
-2. Cài Python 3.11 + `ruff` + `modal`
+2. Cài Python 3.11 + dependencies từ `requirements.txt` (`modal`, `ruff`)
 3. `python -m py_compile modal_app.py` (kiểm tra cú pháp)
 4. `ruff check modal_app.py` (lint)
 5. `modal deploy modal_app.py` → **production** (environment mặc định `main`)
@@ -342,6 +343,7 @@ Theo dõi tiến trình ở tab **Actions** của repo. Job có `timeout-minutes
 | Deploy lần đầu rất lâu (>15 phút) | Bình thường — đang tải trọng số VieNeu và gỡ symlink. Các lần sau dùng cache. |
 | `401 Unauthorized` khi gọi API | Thiếu header `Authorization: Bearer <API_KEY>` hoặc key sai. |
 | `ffmpeg` lỗi khi xin `mp3`/`opus`/`aac`/`flac` | `ffmpeg` được cài trong image; nếu lỗi, xem log `modal app logs`. |
+| CI báo `No file ... matched to [**/requirements.txt or **/pyproject.toml]` | `actions/setup-python` với `cache: pip` bắt buộc phải có file dependency. Repo đã có `requirements.txt`; nếu bạn xoá nó thì phải bỏ `cache: pip` trong workflow. |
 | Muốn tắt xác thực khi test | Tạo secret với `API_KEY=""`, app sẽ bỏ qua kiểm tra. **Không dùng cho production.** |
 
 ---
