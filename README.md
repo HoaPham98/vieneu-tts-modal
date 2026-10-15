@@ -4,8 +4,7 @@ Deploy **VieNeu-TTS v3 Turbo** — engine TTS tiếng Việt (ONNX Runtime) — 
 
 > **Vì sao dùng gói Starter?**
 > Modal Starter tặng **$30 compute credit mỗi tháng** (tạo tài khoản miễn phí) và serverless nghĩa là **chỉ trả tiền khi có request** — container tự scale về 0 khi rảnh nên credit không bị "đốt" lúc không dùng.
-> Đơn giá cơ bản: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây`. Cấu hình mặc định **4 core + 4 GiB** ≈ `$0.0000613/giây`. Tuy nhiên `region="us-east"` là region **hẹp** nên bị nhân **1.75×** ⇒ thực tế ≈ `$0.000107/giây` (~`$0.39/giờ`), tức **$30 đủ cho ~77 giờ** compute mỗi tháng.
-> Đổi `region` sang dạng **broad** (`"us"`) chỉ còn **1.15×**, tiết kiệm ~34% và cold start tốt hơn.
+> Đơn giá cơ bản: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây`. Cấu hình mặc định **3 core + 2 GiB** (không set region, giá gốc 1.0×) ≈ `$0.0000437/giây` (~`$0.16/giờ`), tức **$30 đủ cho ~190 giờ** compute mỗi tháng (thay vì chỉ ~77 giờ như khi bị ghim vào region hẹp `us-east` nhân 1.75×).
 > Đăng ký: <https://modal.com/signup> — xem thêm [Modal Pricing](https://modal.com/pricing) và [Region selection](https://modal.com/docs/guide/region-selection).
 
 ---
@@ -261,16 +260,16 @@ Các thông số chính nằm ở đầu `modal_app.py` và trong decorator `@ap
 |---|---|---|---|
 | `USE_GPU` | `modal_app.py` | `False` | `True` ⇒ dùng **GPU T4**, RAM 4096 MiB, precision `fp16/cuda` |
 | `REQUIRE_INT8` | `modal_app.py` | `True` | Từ chối node CPU không có VNNI để Modal cấp node tốt hơn |
-| `cpu` | `compute_config` | `4.0` | Số physical core (1 core = 2 vCPU), chỉ khi `USE_GPU = False` |
-| `memory` | `compute_config` | `4096` MiB | RAM |
-| `region` | `compute_config` | `us-east` | Region chạy container. `us-east`/`us-west`/... là region **hẹp** ⇒ giá ×**1.75**; dạng broad (`"us"`, `"eu"`, `"ap"`) chỉ ×**1.15** |
+| `cpu` | `compute_config` | `3.0` | Số physical core (1 core = 2 vCPU), chỉ khi `USE_GPU = False` |
+| `memory` | `compute_config` | `2048` MiB | RAM |
+| `region` | `compute_config` | *(không set)* | Không set region để hưởng giá cơ bản (1.0×). Nếu ghim region hẹp (`us-east`) sẽ bị nhân 1.75×, broad (`us`, `eu`) nhân 1.15× |
 | `scaledown_window` | `@app.cls` | `60` giây | Giữ container sống 60s sau request cuối (đổi lấy cold start nhanh hơn) |
 | `max_inputs` | `@modal.concurrent` | `2` | Số request đồng thời mỗi container |
-| `OMP_NUM_THREADS` | `.env()` | `4` | Số thread ONNX Runtime |
+| `OMP_NUM_THREADS` | `.env()` | `3` | Số thread ONNX Runtime (khớp với CPU) |
 
 **Khuyến nghị:**
-- Giữ số thread ONNX khớp với CPU. Lưu ý `cpu=4.0` là **4 physical core (= 8 vCPU)**; có thể giảm `cpu`/`OMP_NUM_THREADS` xuống `2` để rẻ hơn ~50% nếu chấp nhận chậm hơn.
-- **Bỏ hẳn `region` khỏi `compute_config`** để trả đúng giá cơ bản (không bị nhân 1.15×/1.75×) — đây là cách tiết kiệm credit dễ nhất nếu không cần ghim vùng.
+- Giữ số thread ONNX khớp với CPU. Lưu ý `cpu=3.0` là **3 physical core (= 6 vCPU)**; có thể giảm tiếp xuống `2` để tiết kiệm hơn nếu chấp nhận tốc độ chậm hơn một chút.
+- **Không đặt `region` trong `compute_config`** để trả đúng giá cơ bản (1.0×, không bị nhân 1.15×/1.75×).
 
 ---
 
@@ -278,12 +277,12 @@ Các thông số chính nằm ở đầu `modal_app.py` và trong decorator `@ap
 
 Gói Starter chỉ có **$30/tháng**, nên vài mẹo sau giúp credit kéo dài:
 
-1. **Giữ `USE_GPU = False`.** GPU T4 tốn `$0.000164/giây` — gấp **~2,7 lần** cấu hình CPU 4 core + 4 GiB (`$0.0000613/giây`) ở cùng mức nhân region. Chỉ bật GPU nếu cần latency cực thấp.
-2. **Bỏ hoặc nới `region`.** Hiện tại `region="us-east"` bị nhân **1.75×** (broad `"us"` chỉ **1.15×**). Bỏ hẳn `region` để trả giá cơ bản ⇒ tiết kiệm tới **~43%** và cold start nhanh hơn (pool node lớn hơn).
+1. **Giữ `USE_GPU = False`.** GPU T4 tốn `$0.000164/giây` — gấp **~3,7 lần** cấu hình CPU 3 core + 2 GiB (`$0.0000437/giây`) ở giá cơ bản. Chỉ bật GPU nếu cần latency cực thấp.
+2. **Không set `region`.** Giữ nguyên không set region để container chạy ở giá cơ bản (1.0×), tránh phụ thu 1.15× (broad) hoặc 1.75× (narrow).
 3. **Để `enable_memory_snapshot=True`.** Snapshot giúp cold start nhanh nên bạn không cần `scaledown_window` lớn để "giữ nóng" container.
-4. **Giảm `scaledown_window`** (ví dụ `30`) nếu traffic thưa — container tắt sớm hơn ⇒ ít tốn credit lúc rảnh.
+4. **Giảm `scaledown_window`** (ví dụ `20` hoặc `30`) nếu traffic thưa — container tắt sớm hơn ⇒ ít tốn credit lúc rảnh.
 5. **Theo dõi usage** ở <https://modal.com/settings/usage> — Starter có log retention **1 ngày** và **200 app** đã deploy.
-6. **Ước lượng nhanh:** với `region="us-east"` (×1.75), $30 ÷ `$0.000107/giây` ≈ **77 giờ** compute CPU mỗi tháng. Nếu bỏ `region` (giá cơ bản) thì ≈ **136 giờ**. Với ~2s mỗi câu TTS ⇒ khoảng **140.000–245.000 request/tháng**.
+6. **Ước lượng nhanh:** với cấu hình 3 core + 2 GiB ở giá cơ bản, $30 ÷ `$0.0000437/giây` ≈ **190 giờ** compute CPU mỗi tháng. Với ~2s mỗi câu TTS ⇒ khoảng **~340.000 request/tháng**.
 
 Nếu vượt hạn mức credit, compute sẽ **tạm dừng** cho tới chu kỳ sau — trừ khi bạn đã nâng cấp gói hoặc thêm phương thức thanh toán.
 
