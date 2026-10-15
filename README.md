@@ -4,9 +4,9 @@ Triển khai **VieNeu-TTS v3 Turbo** — mô hình Text-to-Speech (TTS) tiếng 
 
 Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**, container tự động bật khi có request và scale về 0 khi không dùng, cho phép bạn sở hữu riêng một endpoint TTS cá nhân với hàng trăm ngàn lượt đọc mỗi tháng hoàn toàn miễn phí.
 
-> 💡 **Ước tính chi phí với cấu hình mặc định (3 CPU + 2 GiB RAM, Base Price 1.0×):**
-> - Đơn giá: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000437/giây`** (~`$0.157/giờ`).
-> - **$30 credit/tháng** đủ cho **~190 giờ compute liên tục**, tương đương **~340.000 câu đọc** (ước tính 2s/câu).
+> 💡 **Ước tính chi phí với cấu hình mặc định (2 CPU + 2 GiB RAM, Base Price 1.0×):**
+> - Đơn giá: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000306/giây`** (~`$0.110/giờ`).
+> - **$30 credit/tháng** đủ cho **~272 giờ compute liên tục**, tương đương **~490.000 câu đọc** (ước tính 2s/câu).
 
 ---
 
@@ -354,12 +354,12 @@ Và cấu hình tài nguyên container:
 
 ```python
 # Cấu hình mặc định tối ưu chi phí
-compute_config = {"cpu": 3.0, "memory": 2048}
+compute_config = {"cpu": 2.0, "memory": 2048}
 ```
 
 | Cấu hình | Vị trí | Mặc định | Giải thích & Gợi ý |
 |---|---|---|---|
-| `cpu` | `compute_config` | `3.0` | 3 physical cores (= 6 vCPUs). Rất nhanh cho INT8. Có thể giảm xuống `2.0` để tiết kiệm thêm. |
+| `cpu` | `compute_config` | `2.0` | 2 physical cores (= 4 vCPUs). Rất mượt và tối ưu cho INT8. |
 | `memory` | `compute_config` | `2048` MiB | 2 GiB RAM, đáp ứng thoải mái cho model INT8. |
 | `region` | `compute_config` | *(không set)* | Không set region để hưởng giá gốc 1.0×. Ghim `us-east` sẽ bị tính 1.75×. |
 | `scaledown_window`| `@app.cls` | `60` giây | Thời gian giữ container sau khi hết request. Giảm xuống `15`-`30` nếu traffic ít. |
@@ -371,7 +371,7 @@ compute_config = {"cpu": 3.0, "memory": 2048}
 
 1. **Không đặt `region` cố định:** Modal thu thêm phụ thu khi bạn chỉ định cụ thể region (1.15× cho broad region và 1.75× cho narrow region). Không ghim region giúp bạn luôn được hưởng giá gốc rẻ nhất (1.0×).
 2. **Tận dụng `enable_memory_snapshot=True`:** Snapshot giúp phục hồi container trong ~200ms, do đó bạn có thể giảm `scaledown_window` từ `60` xuống `15` hoặc `20` giây nếu các cuộc gọi API cách nhau khá xa.
-3. **Chỉ dùng GPU khi thật sự cần:** GPU T4 tốn `$0.000164/giây` — đắt hơn gấp **~3.7 lần** so với cấu hình CPU 3 core + 2GB (`$0.0000437/giây`). Với INT8 trên CPU hiện đại, tốc độ đọc đã gần như tức thì.
+3. **Chỉ dùng GPU khi thật sự cần:** GPU T4 tốn `$0.000164/giây` — đắt hơn gấp **~5.3 lần** so với cấu hình CPU 2 core + 2GB (`$0.0000306/giây`). Với INT8 trên CPU hiện đại, tốc độ đọc đã gần như tức thì.
 4. **Theo dõi chi phí:** Xem chi tiết credit đã dùng tại [Modal Usage Settings](https://modal.com/settings/usage).
 
 ---

@@ -82,13 +82,13 @@ else:
             "vieneu>=3.7.1", "fastapi[standard]", "soundfile", "numpy"
         )
         .env({
-            "OMP_NUM_THREADS": "3",
-            "ORT_INTRA_OP_NUM_THREADS": "3",
+            "OMP_NUM_THREADS": "2",
+            "ORT_INTRA_OP_NUM_THREADS": "2",
             "ORT_INTER_OP_NUM_THREADS": "1",
         })
         .run_function(download_models)
     )
-    compute_config = {"cpu": 3.0, "memory": 2048}
+    compute_config = {"cpu": 2.0, "memory": 2048}
 
 app = modal.App("vieneu-tts-v3-turbo", image=image)
 
