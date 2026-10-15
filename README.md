@@ -1,353 +1,404 @@
 # VieNeu-TTS v3 Turbo on Modal
 
-Deploy **VieNeu-TTS v3 Turbo** — engine TTS tiếng Việt (ONNX Runtime) — lên [Modal](https://modal.com) dưới dạng **serverless API tương thích OpenAI**, tận dụng gói **Starter với $30 credit miễn phí mỗi tháng**.
+Triển khai **VieNeu-TTS v3 Turbo** — mô hình Text-to-Speech (TTS) tiếng Việt chất lượng cao chạy trên ONNX Runtime — lên [Modal](https://modal.com) thành một **Serverless API tương thích chuẩn OpenAI Audio Speech**.
 
-> **Vì sao dùng gói Starter?**
-> Modal Starter tặng **$30 compute credit mỗi tháng** (tạo tài khoản miễn phí) và serverless nghĩa là **chỉ trả tiền khi có request** — container tự scale về 0 khi rảnh nên credit không bị "đốt" lúc không dùng.
-> Đơn giá cơ bản: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây`. Cấu hình mặc định **3 core + 2 GiB** (không set region, giá gốc 1.0×) ≈ `$0.0000437/giây` (~`$0.16/giờ`), tức **$30 đủ cho ~190 giờ** compute mỗi tháng (thay vì chỉ ~77 giờ như khi bị ghim vào region hẹp `us-east` nhân 1.75×).
-> Đăng ký: <https://modal.com/signup> — xem thêm [Modal Pricing](https://modal.com/pricing) và [Region selection](https://modal.com/docs/guide/region-selection).
+Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**, container tự động bật khi có request và scale về 0 khi không dùng, cho phép bạn sở hữu riêng một endpoint TTS cá nhân với hàng trăm ngàn lượt đọc mỗi tháng hoàn toàn miễn phí.
+
+> 💡 **Ước tính chi phí với cấu hình mặc định (3 CPU + 2 GiB RAM, Base Price 1.0×):**
+> - Đơn giá: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000437/giây`** (~`$0.157/giờ`).
+> - **$30 credit/tháng** đủ cho **~190 giờ compute liên tục**, tương đương **~340.000 câu đọc** (ước tính 2s/câu).
 
 ---
 
 ## Mục lục
 
-- [Tính năng](#tính-năng)
-- [Yêu cầu](#yêu-cầu)
+- [Tính năng nổi bật](#tính-năng-nổi-bật)
+- [Yêu cầu chuẩn bị](#yêu-cầu-chuẩn-bị)
 - [Cấu trúc repo](#cấu-trúc-repo)
-- [Cài đặt lần đầu](#cài-đặt-lần-đầu)
-- [Deploy](#deploy)
-- [Sử dụng API](#sử-dụng-api)
-- [Cấu hình](#cấu-hình)
-- [Tối ưu chi phí với gói Starter](#tối-ưu-chi-phí-với-gói-starter)
-- [CI/CD với GitHub Actions](#cicd-với-github-actions)
-- [Xử lý sự cố](#xử-lý-sự-cố)
+- [Hướng dẫn thiết lập cho người mới (Quickstart)](#hướng-dẫn-thiết-lập-cho-người-mới-quickstart)
+  - [Bước 1: Clone repo và tạo môi trường Python](#bước-1-clone-repo-và-tạo-môi-trường-python)
+  - [Bước 2: Cài đặt và đăng nhập Modal CLI](#bước-2-cài-đặt-và-đăng-nhập-modal-cli)
+  - [Bước 3: Tạo Modal Secret lưu API Key](#bước-3-tạo-modal-secret-lưu-api-key)
+  - [Bước 4: Deploy lên Modal](#bước-4-deploy-lên-modal)
+- [Tùy chọn: Tự động hóa CI/CD bằng GitHub Actions (Fork)](#tùy-chọn-tự-động-hóa-cicd-bằng-github-actions-fork)
+- [Hướng dẫn sử dụng API](#hướng-dẫn-sử-dụng-api)
+  - [Xác định Base URL của bạn](#xác-định-base-url-của-bạn)
+  - [Health check](#health-check)
+  - [Lấy danh sách giọng đọc](#lấy-danh-sách-giọng-đọc)
+  - [Tạo file âm thanh (WAV / MP3)](#tạo-file-âm-thanh-wav--mp3)
+  - [Streaming âm thanh thật (PCM / SSE)](#streaming-âm-thanh-thật-pcm--sse)
+  - [Tích hợp với SDK OpenAI (Python & TypeScript)](#tích-hợp-với-sdk-openai)
+  - [Tích hợp vào các UI/Chatbot (Dify, NextChat, Open WebUI)](#tích-hợp-vào-các-uichatbot)
+- [Bảng tham số API `POST /v1/audio/speech`](#bảng-tham-số-api-post-v1audiospeech)
+- [Tùy chỉnh cấu hình](#tùy-chỉnh-cấu-hình)
+- [Mẹo tối ưu chi phí & Credit](#mẹo-tối-ưu-chi-phí--credit)
+- [Xử lý sự cố thường gặp (FAQ)](#xử-lý-sự-cố-thường-gặp-faq)
+- [Ghi công](#ghi-công)
 
 ---
 
-## Tính năng
+## Tính năng nổi bật
 
-- 🎙️ **VieNeu-TTS v3 Turbo** chạy trên ONNX Runtime (CPU) hoặc PyTorch (GPU).
-- 🔌 **API tương thích OpenAI** — dùng được với SDK OpenAI, `curl`, hoặc bất kỳ client nào hỗ trợ `POST /v1/audio/speech`.
-- ⚡ **Ép INT8 + VNNI**: tự động từ chối node CPU không có tập lệnh VNNI (`avx512_vnni` / `avx_vnni`) để Modal cấp node mới hơn ⇒ nhanh hơn nhiều.
-- 📸 **Memory Snapshot**: model được nạp sẵn vào RAM và "đóng băng" bằng `enable_memory_snapshot=True` ⇒ cold start gần như tức thì (không phải load lại model).
-- 🌊 **Streaming thật**: hỗ trợ SSE (`stream_format="sse"`), WAV chunked, và PCM thô — audio phát ra ngay khi đang sinh, không cần chờ hết câu.
-- 🗣️ **Đa dạng định dạng**: `wav`, `pcm`, `mp3`, `opus`, `aac`, `flac` (mp3/opus/aac/flac qua `ffmpeg`).
-- 🎚️ **Đổi tốc độ đọc** (`speed`) và **sample rate** (`24000` / `48000`).
-- 🔐 **Bảo vệ bằng API key** (Bearer token) qua Modal Secret.
-- 🤖 **Tự động deploy** bằng GitHub Actions mỗi lần push lên `main`.
+- 🎙️ **VieNeu-TTS v3 Turbo**: Model TTS tiếng Việt phát âm tự nhiên, tốc độ sinh cực nhanh qua ONNX Runtime CPU (hoặc PyTorch GPU).
+- 🔌 **Chuẩn OpenAI Compatible**: Hỗ trợ route `/v1/audio/speech`, `/v1/models`, `/v1/audio/voices` — dùng chung được với OpenAI SDK, LangChain, LlamaIndex, Dify, v.v.
+- ⚡ **Ép INT8 & VNNI**: Tự động nhận diện phần cứng có tập lệnh AVX-512 VNNI / AVX-VNNI để kích hoạt tăng tốc INT8 tối đa.
+- 📸 **Modal Memory Snapshot**: Tải trước model vào RAM và đóng băng trạng thái (`enable_memory_snapshot=True`), giúp cold start container gần như tức thì (~200–500ms).
+- 🌊 **Streaming thật**: Hỗ trợ Server-Sent Events (`stream_format="sse"`), chunked WAV và raw PCM để phát âm thanh ngay khi đang sinh câu, không cần chờ hết văn bản.
+- 🗣️ **Hỗ trợ đa định dạng**: `wav`, `pcm`, `mp3`, `opus`, `aac`, `flac` (tự động chuyển đổi bằng `ffmpeg`).
+- 🔐 **Bảo mật**: Xác thực Bearer Token qua Modal Secret.
+- 💰 **Chi phí tối ưu**: Không ép buộc region, tránh phụ thu 1.15× – 1.75× của Modal.
 
 ---
 
-## Yêu cầu
+## Yêu cầu chuẩn bị
 
 | Thành phần | Ghi chú |
 |---|---|
-| Python | 3.11+ (để chạy `modal` CLI local) |
-| Tài khoản Modal | Gói **Starter** (miễn phí, có $30 credit/tháng) |
-| `modal` CLI | `pip install modal` |
-| Modal Secret `vieneu-api-key` | Chứa biến `API_KEY` để bảo vệ API |
-| (CI/CD) GitHub repo + secrets | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET` |
+| **Python** | 3.11+ (cài trên máy cá nhân để chạy lệnh `modal`) |
+| **Tài khoản Modal** | [Đăng ký miễn phí tại modal.com](https://modal.com/signup) — nhận ngay $30 credit/tháng |
+| **Git** | Để clone và quản lý mã nguồn |
+| **(Tùy chọn) GitHub account** | Nếu muốn fork repo để tự động deploy qua GitHub Actions |
 
 ---
 
 ## Cấu trúc repo
 
-```
+```text
 .
-├── modal_app.py                     # Toàn bộ app: image build, model loading, FastAPI routes
-├── requirements.txt                 # Deps cho CI/local (modal CLI, ruff) — deps runtime nằm trong image của modal_app.py
-├── .github/workflows/deploy-modal.yml  # CI/CD: push lên main ⇒ deploy lên Modal (production)
-├── ruff.toml                        # Cấu hình lint cho CI
-└── .gitignore
+├── modal_app.py                     # Toàn bộ logic app: image build, model weights, FastAPI app
+├── requirements.txt                 # Dependencies cho local CLI và CI (modal, ruff)
+├── .github/workflows/deploy-modal.yml # CI/CD tự động deploy lên Modal khi push code
+├── ruff.toml                        # Cấu hình lint code
+└── README.md
 ```
 
 ---
 
-## Cài đặt lần đầu
+## Hướng dẫn thiết lập cho người mới (Quickstart)
 
-### 1. Cài Modal CLI và đăng nhập
+Chỉ với 4 bước đơn giản, bạn sẽ có ngay một endpoint TTS riêng cho mình:
 
-```bash
-pip install modal
-modal setup          # mở trình duyệt để xác thực với tài khoản Modal
-```
+### Bước 1: Clone repo và tạo môi trường Python
 
-`modal setup` sẽ tạo sẵn file `~/.modal.toml` với token của bạn.
-
-### 2. Tạo Modal Secret chứa API key
-
-API key dùng để bảo vệ endpoint (`Authorization: Bearer <API_KEY>`). Nếu secret **không tồn tại**, app sẽ crash lúc khởi động vì `modal.Secret.from_name("vieneu-api-key")`.
+Mở terminal và clone repo về máy:
 
 ```bash
-# Gói Starter dùng một environment duy nhất ("main") = production
-modal secret create vieneu-api-key API_KEY="doi-key-bao-mat-cua-ban"
+git clone https://github.com/HoaPham98/vieneu-tts-modal.git
+cd vieneu-tts-modal
 ```
 
-> Không cần cờ `--env`: secret sẽ nằm trong environment mặc định (`main`).
-> Để app chạy **không cần xác thực**, tạo secret với `API_KEY=""` — code sẽ tự bỏ qua bước kiểm tra.
-
-### 3. Kiểm tra biến cấu hình trong `modal_app.py`
-
-```python
-USE_GPU = False       # False = CPU (rẻ, hợp gói Starter) | True = GPU T4
-REQUIRE_INT8 = True   # True = chỉ nhận node CPU có VNNI (khuyến nghị)
-```
-
----
-
-## Deploy
-
-### Deploy thủ công
+Khuyến nghị tạo một virtual environment riêng:
 
 ```bash
-# Deploy thẳng lên production (environment mặc định "main")
+# Trên macOS / Linux:
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Trên Windows (PowerShell):
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+Cài đặt các gói phụ trợ cần thiết cho CLI:
+
+```bash
+pip install -r requirements.txt
+```
+
+### Bước 2: Cài đặt và đăng nhập Modal CLI
+
+Chạy lệnh xác thực tài khoản:
+
+```bash
+modal setup
+```
+
+Trình duyệt sẽ tự động mở trang cấp quyền của Modal. Sau khi bạn đồng ý, file cấu hình token sẽ được tự động lưu vào máy (`~/.modal.toml`).
+
+### Bước 3: Tạo Modal Secret lưu API Key
+
+API này được bảo vệ bởi khóa Bearer Token. Bạn cần tạo một secret tên là `vieneu-api-key` trên Modal chứa biến `API_KEY`:
+
+```bash
+# Thay 'my-secret-key-123' bằng mật khẩu API bạn muốn đặt
+modal secret create vieneu-api-key API_KEY="my-secret-key-123"
+```
+
+> 💡 **Mẹo:**
+> - Nếu bạn muốn mở công khai API (không cần mật khẩu), hãy đặt `API_KEY=""`.
+> - Bạn cũng có thể quản lý hoặc tạo Secret trực tiếp trên web tại [Modal Secrets Dashboard](https://modal.com/secrets).
+
+### Bước 4: Deploy lên Modal
+
+Chạy lệnh deploy chính thức:
+
+```bash
 modal deploy modal_app.py
 ```
 
-Lần deploy **đầu tiên** sẽ build image: cài `ffmpeg`, `espeak-ng`, `vieneu`, rồi chạy `download_models()` để tải sẵn trọng số v3 Turbo và gỡ toàn bộ symlink. Bước này mất **~10–20 phút**. Các lần deploy sau nhanh hơn nhiều nhờ cache layer của Modal.
+> ⏳ **Lưu ý ở lần deploy đầu tiên:**
+> Modal sẽ tiến hành build container image: tải Ubuntu, cài thư viện âm thanh (`ffmpeg`, `espeak-ng`), tải trọng số model VieNeu v3 Turbo (~300MB) và gỡ symlink. Quá trình này mất khoảng **10–15 phút**.
+> Ở các lần deploy tiếp theo hoặc khi container khởi động lại, Modal sẽ sử dụng cache image và memory snapshot nên chỉ mất vài giây!
 
-Khi xong, CLI in ra URL dạng:
+Sau khi deploy thành công, terminal sẽ in ra URL của ứng dụng, có dạng:
 
-```
-https://<workspace>--vieneu-tts-v3-turbo-web-app.modal.run
-```
-
-### Chạy thử tạm thời (không deploy chính thức)
-
-```bash
-# Tạo app ephemeral có URL -dev, tự tắt khi Ctrl+C
-modal serve modal_app.py
-```
-
-### Xem log & quản lý
-
-```bash
-modal app list                        # Liệt kê app đã deploy
-modal app logs vieneu-tts-v3-turbo    # Xem log realtime
-modal app stop vieneu-tts-v3-turbo    # Dừng app
+```text
+✓ Created objects.
+├── 🔨 Created web function web_app => https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run
 ```
 
 ---
 
-## Sử dụng API
+## Tùy chọn: Tự động hóa CI/CD bằng GitHub Actions (Fork)
 
-Đặt biến cho tiện:
+Nếu bạn muốn chỉnh sửa code và tự động deploy mỗi khi push lên GitHub:
+
+1. **Fork** repository này về tài khoản GitHub của bạn.
+2. Lấy Modal Token:
+   - Truy cập [Modal Settings > Tokens](https://modal.com/settings/tokens) và chọn **Create new token**.
+   - Lưu lại `Token ID` và `Token Secret`.
+3. Cấu hình GitHub Secrets trong repo đã Fork:
+   - Vào **Settings** > **Secrets and variables** > **Actions** > **New repository secret**.
+   - Thêm 2 secret:
+     - `MODAL_TOKEN_ID`: Điền Token ID từ Modal.
+     - `MODAL_TOKEN_SECRET`: Điền Token Secret từ Modal.
+4. Đảm bảo bạn đã tạo secret `vieneu-api-key` trên Modal (như ở Bước 3).
+5. Mỗi khi bạn push commit lên nhánh `main`, GitHub Actions sẽ tự động kiểm tra cú pháp và deploy phiên bản mới nhất lên Modal!
+
+---
+
+## Hướng dẫn sử dụng API
+
+### Xác định Base URL của bạn
+
+URL API của bạn có định dạng:
+```text
+https://<workspace-name>--vieneu-tts-v3-turbo-web-app.modal.run
+```
+*(Trong đó `<workspace-name>` là tên tài khoản hoặc tên workspace Modal của bạn, xem tại góc trên bên trái của [modal.com/apps](https://modal.com/apps)).*
+
+Đặt các biến môi trường tiện cho việc test:
 
 ```bash
-export BASE_URL="https://<workspace>--vieneu-tts-v3-turbo-web-app.modal.run"
-export API_KEY="doi-key-bao-mat-cua-ban"
+export BASE_URL="https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run"
+export API_KEY="my-secret-key-123"
 ```
 
 ### Health check
+
+Kiểm tra trạng thái máy chủ, loại CPU và precision:
 
 ```bash
 curl "$BASE_URL/"
 ```
 
+Kết quả trả về:
 ```json
 {
   "status": "ok",
   "auth_enabled": true,
   "engine": "CPU (ONNX Runtime)",
   "precision": "int8",
-  "cpu_model": "Intel(R) Xeon(R) ...",
+  "cpu_model": "Intel(R) Xeon(R) Platinum ...",
   "stream_sample_rate": 24000,
   "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/voices", "/v1/audio/speech"]
 }
 ```
 
-### Liệt kê giọng đọc
+### Lấy danh sách giọng đọc
 
 ```bash
-curl "$BASE_URL/v1/audio/voices" -H "Authorization: Bearer $API_KEY"
+curl "$BASE_URL/v1/audio/voices" \
+  -H "Authorization: Bearer $API_KEY"
 ```
 
-> 📌 Lấy ID giọng thật từ endpoint này rồi thay vào trường `voice` ở các ví dụ bên dưới. Nếu bỏ trống `voice`, app dùng giọng đầu tiên trong danh sách.
+### Tạo file âm thanh (WAV / MP3)
 
-### Tổng hợp giọng nói (non-streaming → file WAV)
+**Xuất file WAV (mặc định):**
 
 ```bash
 curl "$BASE_URL/v1/audio/speech" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-        "model": "vieneu-v3-turbo",
-        "input": "Xin chào, đây là VieNeu TTS phiên bản ba turbo.",
-        "voice": "Minh Quân",
-        "response_format": "wav"
-      }' \
-  --output out.wav
+    "model": "vieneu-v3-turbo",
+    "input": "Xin chào, đây là giọng đọc tiếng Việt chạy trên hạ tầng serverless của Modal.",
+    "voice": "Minh Quân",
+    "response_format": "wav"
+  }' \
+  --output chao.wav
 ```
 
-### Xuất MP3 (qua ffmpeg)
+**Xuất file MP3 nén (dung lượng nhỏ gọn):**
 
 ```bash
 curl "$BASE_URL/v1/audio/speech" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"input":"Chuyển sang MP3 nhé.","response_format":"mp3"}' \
+  -d '{
+    "input": "File này được nén sang định dạng MP3 thông qua ffmpeg.",
+    "response_format": "mp3"
+  }' \
   --output out.mp3
 ```
 
-### Streaming PCM thô (độ trễ thấp nhất)
+### Streaming âm thanh thật (PCM / SSE)
 
-```bash
-curl -N "$BASE_URL/v1/audio/speech" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"input":"Câu này phát ra ngay khi đang sinh.","response_format":"pcm","stream":true}' \
-  --output out.pcm
-```
+- **Streaming PCM thô (độ trễ thấp nhất):**
+  ```bash
+  curl -N "$BASE_URL/v1/audio/speech" \
+    -H "Authorization: Bearer $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"input":"Âm thanh phát ra ngay lập tức khi đang tạo.","response_format":"pcm","stream":true}' \
+    --output stream.pcm
+  ```
 
-### Streaming SSE (giống OpenAI Realtime)
+- **Streaming Server-Sent Events (SSE) theo chuẩn OpenAI Realtime:**
+  ```bash
+  curl -N "$BASE_URL/v1/audio/speech" \
+    -H "Authorization: Bearer $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"input":"Văn bản dài được gửi về từng phần kèm thông tin token.","stream_format":"sse"}'
+  ```
 
-```bash
-curl -N "$BASE_URL/v1/audio/speech" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"input":"Nội dung dài sẽ được trả về theo từng chunk base64.","stream_format":"sse"}'
-```
+---
 
-Mỗi event trả về:
+### Tích hợp với SDK OpenAI
 
-```
-event: speech.audio.delta
-data: {"type":"speech.audio.delta","audio":"<base64 pcm16>"}
+Vì API hoàn toàn tương thích với đặc tả của OpenAI, bạn có thể sử dụng trực tiếp SDK chính thức của OpenAI:
 
-event: speech.audio.done
-data: {"type":"speech.audio.done","usage":{"input_tokens":9,"output_tokens":1234,"total_tokens":1243}}
-```
-
-### Dùng với SDK OpenAI (Python)
+#### Python
 
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url=f"{BASE_URL}/v1", api_key=API_KEY)
+client = OpenAI(
+    base_url="https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run/v1",
+    api_key="my-secret-key-123",
+)
 
 with client.audio.speech.with_streaming_response.create(
     model="vieneu-v3-turbo",
     voice="Minh Quân",
-    input="Xin chào từ OpenAI SDK!",
+    input="Xin chào bạn, tôi là trợ lý ảo sử dụng giọng đọc VieNeu v3 Turbo!",
     response_format="wav",
 ) as response:
-    response.stream_to_file("hello.wav")
+    response.stream_to_file("output.wav")
 ```
 
-### Bảng tham số `POST /v1/audio/speech`
+#### Node.js / TypeScript
+
+```typescript
+import OpenAI from "openai";
+import fs from "fs";
+
+const openai = new OpenAI({
+  baseURL: "https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run/v1",
+  apiKey: "my-secret-key-123",
+});
+
+async function main() {
+  const response = await openai.audio.speech.create({
+    model: "vieneu-v3-turbo",
+    voice: "Minh Quân",
+    input: "Xin chào từ ứng dụng NodeJS!",
+    response_format: "mp3",
+  });
+
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fs.promises.writeFile("output.mp3", buffer);
+}
+
+main();
+```
+
+---
+
+### Tích hợp vào các UI/Chatbot
+
+Các ứng dụng mã nguồn mở hỗ trợ tùy chỉnh Custom OpenAI TTS Endpoint như **NextChat, LibreChat, Dify, Open WebUI**:
+
+- **API Base URL**: `https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run/v1`
+- **API Key**: Khóa bạn đã đặt trong `vieneu-api-key`
+- **Model**: `vieneu-v3-turbo` hoặc alias `tts-1`
+- **Voice**: `Minh Quân` hoặc các alias như `alloy`, `nova`, `echo` (tất cả alias mặc định sẽ tự map về giọng chuẩn tiếng Việt).
+
+---
+
+## Bảng tham số API `POST /v1/audio/speech`
 
 | Trường | Kiểu | Mặc định | Mô tả |
 |---|---|---|---|
-| `input` | string | *(bắt buộc)* | Văn bản cần đọc |
-| `voice` | string | giọng đầu tiên | ID/description của giọng, hoặc alias kiểu OpenAI (`alloy`, `nova`, ...) |
-| `model` | string | `vieneu-v3-turbo` | Chấp nhận cả `gpt-4o-mini-tts`, `tts-1`, `tts-1-hd` |
-| `response_format` | enum | `wav` | `wav`, `pcm`, `mp3`, `opus`, `aac`, `flac` |
-| `sample_rate` | int | `24000` | `24000` hoặc `48000` |
-| `speed` | float | `1.0` | Đổi tốc độ đọc (resampling) |
-| `stream` | bool | `false` | `true` ⇒ trả về chunked stream |
+| `input` | string | *(bắt buộc)* | Văn bản tiếng Việt cần đọc |
+| `voice` | string | Giọng đầu tiên | Tên giọng đọc (lấy từ `/v1/audio/voices`) hoặc alias OpenAI (`alloy`, `echo`, `nova`, ...) |
+| `model` | string | `vieneu-v3-turbo` | Chấp nhận cả `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` |
+| `response_format` | enum | `wav` | `wav`, `mp3`, `pcm`, `opus`, `aac`, `flac` |
+| `sample_rate` | int | `24000` | Tần số lấy mẫu: `24000` hoặc `48000` Hz |
+| `speed` | float | `1.0` | Tốc độ đọc (ví dụ: `0.75` là chậm, `1.25` là nhanh) |
+| `stream` | bool | `false` | `true` để nhận chunked streaming |
 | `stream_format` | enum | `null` | `sse` (Server-Sent Events) hoặc `audio` |
-| `instructions` | string | `null` | Được chấp nhận để tương thích OpenAI (hiện chưa dùng) |
-
-> 💡 Các alias giọng kiểu OpenAI (`alloy`, `echo`, `nova`, ...) đều được map về giọng mặc định của VieNeu.
 
 ---
 
-## Cấu hình
+## Tùy chỉnh cấu hình
 
-Các thông số chính nằm ở đầu `modal_app.py` và trong decorator `@app.cls`:
+Các thông số phần cứng nằm ở phần đầu file [modal_app.py](modal_app.py):
 
-| Cấu hình | Vị trí | Mặc định | Ghi chú |
+```python
+# modal_app.py
+USE_GPU = False       # False: CPU ONNX (tiết kiệm, hợp gói Starter) | True: GPU Nvidia T4
+REQUIRE_INT8 = True   # True: bắt buộc node CPU có tập lệnh VNNI để đạt tốc độ cao nhất
+```
+
+Và cấu hình tài nguyên container:
+
+```python
+# Cấu hình mặc định tối ưu chi phí
+compute_config = {"cpu": 3.0, "memory": 2048}
+```
+
+| Cấu hình | Vị trí | Mặc định | Giải thích & Gợi ý |
 |---|---|---|---|
-| `USE_GPU` | `modal_app.py` | `False` | `True` ⇒ dùng **GPU T4**, RAM 4096 MiB, precision `fp16/cuda` |
-| `REQUIRE_INT8` | `modal_app.py` | `True` | Từ chối node CPU không có VNNI để Modal cấp node tốt hơn |
-| `cpu` | `compute_config` | `3.0` | Số physical core (1 core = 2 vCPU), chỉ khi `USE_GPU = False` |
-| `memory` | `compute_config` | `2048` MiB | RAM |
-| `region` | `compute_config` | *(không set)* | Không set region để hưởng giá cơ bản (1.0×). Nếu ghim region hẹp (`us-east`) sẽ bị nhân 1.75×, broad (`us`, `eu`) nhân 1.15× |
-| `scaledown_window` | `@app.cls` | `60` giây | Giữ container sống 60s sau request cuối (đổi lấy cold start nhanh hơn) |
-| `max_inputs` | `@modal.concurrent` | `2` | Số request đồng thời mỗi container |
-| `OMP_NUM_THREADS` | `.env()` | `3` | Số thread ONNX Runtime (khớp với CPU) |
-
-**Khuyến nghị:**
-- Giữ số thread ONNX khớp với CPU. Lưu ý `cpu=3.0` là **3 physical core (= 6 vCPU)**; có thể giảm tiếp xuống `2` để tiết kiệm hơn nếu chấp nhận tốc độ chậm hơn một chút.
-- **Không đặt `region` trong `compute_config`** để trả đúng giá cơ bản (1.0×, không bị nhân 1.15×/1.75×).
+| `cpu` | `compute_config` | `3.0` | 3 physical cores (= 6 vCPUs). Rất nhanh cho INT8. Có thể giảm xuống `2.0` để tiết kiệm thêm. |
+| `memory` | `compute_config` | `2048` MiB | 2 GiB RAM, đáp ứng thoải mái cho model INT8. |
+| `region` | `compute_config` | *(không set)* | Không set region để hưởng giá gốc 1.0×. Ghim `us-east` sẽ bị tính 1.75×. |
+| `scaledown_window`| `@app.cls` | `60` giây | Thời gian giữ container sau khi hết request. Giảm xuống `15`-`30` nếu traffic ít. |
+| `max_inputs` | `@modal.concurrent` | `2` | Số lượng request đồng thời phục vụ trên cùng 1 container. |
 
 ---
 
-## Tối ưu chi phí với gói Starter
+## Mẹo tối ưu chi phí & Credit
 
-Gói Starter chỉ có **$30/tháng**, nên vài mẹo sau giúp credit kéo dài:
-
-1. **Giữ `USE_GPU = False`.** GPU T4 tốn `$0.000164/giây` — gấp **~3,7 lần** cấu hình CPU 3 core + 2 GiB (`$0.0000437/giây`) ở giá cơ bản. Chỉ bật GPU nếu cần latency cực thấp.
-2. **Không set `region`.** Giữ nguyên không set region để container chạy ở giá cơ bản (1.0×), tránh phụ thu 1.15× (broad) hoặc 1.75× (narrow).
-3. **Để `enable_memory_snapshot=True`.** Snapshot giúp cold start nhanh nên bạn không cần `scaledown_window` lớn để "giữ nóng" container.
-4. **Giảm `scaledown_window`** (ví dụ `20` hoặc `30`) nếu traffic thưa — container tắt sớm hơn ⇒ ít tốn credit lúc rảnh.
-5. **Theo dõi usage** ở <https://modal.com/settings/usage> — Starter có log retention **1 ngày** và **200 app** đã deploy.
-6. **Ước lượng nhanh:** với cấu hình 3 core + 2 GiB ở giá cơ bản, $30 ÷ `$0.0000437/giây` ≈ **190 giờ** compute CPU mỗi tháng. Với ~2s mỗi câu TTS ⇒ khoảng **~340.000 request/tháng**.
-
-Nếu vượt hạn mức credit, compute sẽ **tạm dừng** cho tới chu kỳ sau — trừ khi bạn đã nâng cấp gói hoặc thêm phương thức thanh toán.
+1. **Không đặt `region` cố định:** Modal thu thêm phụ thu khi bạn chỉ định cụ thể region (1.15× cho broad region và 1.75× cho narrow region). Không ghim region giúp bạn luôn được hưởng giá gốc rẻ nhất (1.0×).
+2. **Tận dụng `enable_memory_snapshot=True`:** Snapshot giúp phục hồi container trong ~200ms, do đó bạn có thể giảm `scaledown_window` từ `60` xuống `15` hoặc `20` giây nếu các cuộc gọi API cách nhau khá xa.
+3. **Chỉ dùng GPU khi thật sự cần:** GPU T4 tốn `$0.000164/giây` — đắt hơn gấp **~3.7 lần** so với cấu hình CPU 3 core + 2GB (`$0.0000437/giây`). Với INT8 trên CPU hiện đại, tốc độ đọc đã gần như tức thì.
+4. **Theo dõi chi phí:** Xem chi tiết credit đã dùng tại [Modal Usage Settings](https://modal.com/settings/usage).
 
 ---
 
-## CI/CD với GitHub Actions
+## Xử lý sự cố thường gặp (FAQ)
 
-Repo kèm workflow `.github/workflows/deploy-modal.yml`: mỗi lần push lên nhánh `main` (hoặc chạy tay qua `workflow_dispatch`) sẽ:
+### 1. Lỗi: `Secret 'vieneu-api-key' not found`
+- **Nguyên nhân:** Bạn chưa tạo secret trên Modal hoặc đặt sai tên.
+- **Khắc phục:** Chạy lệnh:
+  ```bash
+  modal secret create vieneu-api-key API_KEY="mat-khau-cua-ban"
+  ```
 
-1. Checkout code
-2. Cài Python 3.11 + dependencies từ `requirements.txt` (`modal`, `ruff`)
-3. `python -m py_compile modal_app.py` (kiểm tra cú pháp)
-4. `ruff check modal_app.py` (lint)
-5. `modal deploy modal_app.py` → **production** (environment mặc định `main`)
+### 2. Quá trình deploy lần đầu mất hơn 10 phút?
+- **Nguyên nhân:** Hoàn toàn bình thường! Modal cần tải image base, cài thư viện C++ audio (`ffmpeg`, `espeak-ng`), tải trọng số mô hình VieNeu v3 Turbo và tạo bản chụp memory snapshot.
+- **Khắc phục:** Không tắt terminal, các lần deploy sau sẽ nhanh hơn gấp nhiều lần nhờ cache.
 
-### Thiết lập
+### 3. Log hiển thị `⚠️ Node hiện tại không có VNNI`
+- **Nguyên nhân:** Node máy ảo Modal cấp ngẫu nhiên lúc build không có tập lệnh AVX-512 VNNI.
+- **Khắc phục:** Code sẽ tự động `sys.exit(1)` để Modal cấp phát một node mới đời mới hơn (Intel Ice Lake/Sapphire Rapids hoặc AMD Zen 4). Nếu bạn gặp tình trạng này lặp lại quá nhiều lần, có thể tạm đặt `REQUIRE_INT8 = False` trong `modal_app.py`.
 
-**Bước 1 — Lấy Modal token**
-
-Vào <https://modal.com/settings/tokens> → **Create new token** → lưu lại `Token ID` và `Token Secret`.
-
-**Bước 2 — Thêm GitHub Secrets**
-
-Repo → *Settings* → *Secrets and variables* → *Actions* → **New repository secret**:
-
-| Secret | Giá trị |
-|---|---|
-| `MODAL_TOKEN_ID` | Token ID vừa tạo |
-| `MODAL_TOKEN_SECRET` | Token Secret vừa tạo |
-
-**Bước 3 — Đảm bảo Modal Secret `vieneu-api-key` tồn tại (production)**
-
-```bash
-modal secret create vieneu-api-key API_KEY="doi-key-bao-mat-cua-ban"
-```
-
-**Bước 4 — Push**
-
-```bash
-git add .
-git commit -m "chore: add CI/CD"
-git push origin main
-```
-
-Theo dõi tiến trình ở tab **Actions** của repo. Job có `timeout-minutes: 60` để đủ thời gian build image lần đầu.
-
-> ⚠️ **Lưu ý:** workflow deploy thẳng vào **production** mỗi lần push lên `main`. Gói Starter chỉ có 1 environment, không có `dev`/`staging` tách biệt — hãy test bằng `modal serve modal_app.py` (chạy local, tạo URL tạm `-dev`) trước khi merge vào `main`. Ngoài ra gói Starter **không có deployment rollback** (tính năng đó chỉ có từ gói Team).
-
----
-
-## Xử lý sự cố
-
-| Vấn đề | Nguyên nhân & cách xử lý |
-|---|---|
-| App crash: *Secret 'vieneu-api-key' not found* | Chưa tạo Modal Secret, hoặc tạo sai environment. Chạy `modal secret create vieneu-api-key API_KEY="..." --env <env>`. |
-| Bị **từ chối node liên tục**, log in `⚠️ Node hiện tại không có VNNI` | `REQUIRE_INT8 = True` đang chờ node Intel Xeon / AMD Zen 4+. Modal sẽ tự thử lại; nếu kéo dài, đổi `REQUIRE_INT8 = False` để chấp nhận `fp32` (chậm hơn). |
-| Deploy lần đầu rất lâu (>15 phút) | Bình thường — đang tải trọng số VieNeu và gỡ symlink. Các lần sau dùng cache. |
-| `401 Unauthorized` khi gọi API | Thiếu header `Authorization: Bearer <API_KEY>` hoặc key sai. |
-| `ffmpeg` lỗi khi xin `mp3`/`opus`/`aac`/`flac` | `ffmpeg` được cài trong image; nếu lỗi, xem log `modal app logs`. |
-| CI báo `No file ... matched to [**/requirements.txt or **/pyproject.toml]` | `actions/setup-python` với `cache: pip` bắt buộc phải có file dependency. Repo đã có `requirements.txt`; nếu bạn xoá nó thì phải bỏ `cache: pip` trong workflow. |
-| Muốn tắt xác thực khi test | Tạo secret với `API_KEY=""`, app sẽ bỏ qua kiểm tra. **Không dùng cho production.** |
+### 4. Lỗi `401 Unauthorized` khi gọi API
+- Kiểm tra header: `Authorization: Bearer <API_KEY>` phải khớp chính xác với `API_KEY` bạn đặt trong secret `vieneu-api-key`.
 
 ---
 
 ## Ghi công
 
-- Engine TTS: [VieNeu-TTS](https://pypi.org/project/vieneu/) (`pnnbao-ump`)
-- Hạ tầng serverless: [Modal](https://modal.com)
+- Mô hình âm thanh: [VieNeu-TTS](https://pypi.org/project/vieneu/) bởi tác giả `pnnbao-ump`.
+- Nền tảng Serverless: [Modal Labs](https://modal.com).
