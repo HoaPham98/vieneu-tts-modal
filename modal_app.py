@@ -205,7 +205,8 @@ class AudioCppService:
 
     @modal.asgi_app()
     def web_app(self):
-        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Security, status
+        import base64
+        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import Response, StreamingResponse
         from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -274,9 +275,43 @@ class AudioCppService:
             model: str = "vieneu-v3-turbo"
             input: str
             voice: Optional[str] = DEFAULT_VOICE
-            response_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] = "wav"
+            response_format: Optional[Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]] = "wav"
+            stream_format: Optional[Literal["sse", "audio"]] = None
             speed: Optional[float] = 1.0
             stream: bool = False
+            sample_rate: Optional[int] = 24000
+            # Extra fields from various UI clients (e.g. epub-to-audio)
+            max_chars: Optional[int] = None
+            temperature: Optional[float] = None
+            top_k: Optional[int] = None
+            top_p: Optional[float] = None
+            repetition_penalty: Optional[float] = None
+
+        def transcode_audio(wav_data: bytes, fmt: str, sample_rate: int = 24000, channels: int = 1) -> tuple[bytes, str]:
+            cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", "pipe:0"]
+            if sample_rate:
+                cmd.extend(["-ar", str(sample_rate)])
+            if channels:
+                cmd.extend(["-ac", str(channels)])
+
+            mime_map = {
+                "pcm": ("s16le", "audio/pcm", ["-acodec", "pcm_s16le"]),
+                "mp3": ("mp3", "audio/mpeg", []),
+                "opus": ("opus", "audio/opus", []),
+                "aac": ("adts", "audio/aac", []),
+                "flac": ("flac", "audio/flac", []),
+                "wav": ("wav", "audio/wav", []),
+            }
+            ffmpeg_fmt, mime_type, extra_args = mime_map.get(fmt, ("wav", "audio/wav", []))
+            cmd.extend(extra_args)
+            cmd.extend(["-f", ffmpeg_fmt, "pipe:1"])
+
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            out_bytes, err = proc.communicate(input=wav_data)
+            if proc.returncode != 0:
+                print(f"⚠️ FFmpeg transcode warning: {err.decode('utf-8')}")
+                return wav_data, "audio/wav"
+            return out_bytes, mime_type
 
         @web.get("/")
         @web.get("/health")
@@ -310,7 +345,7 @@ class AudioCppService:
             }
 
         @v1_router.post("/audio/speech")
-        async def create_speech(req: SpeechRequest):
+        async def create_speech(req: SpeechRequest, request: Request):
             text = req.input.strip()
             if not text:
                 raise HTTPException(status_code=400, detail="Text input cannot be empty.")
@@ -329,33 +364,13 @@ class AudioCppService:
             if req.speed and abs(req.speed - 1.0) > 1e-3:
                 backend_payload["speed"] = req.speed
 
-            # Nếu client yêu cầu streaming
-            if req.stream:
-                client = httpx.AsyncClient(timeout=60.0)
-                try:
-                    req_backend = client.build_request(
-                        "POST", "http://127.0.0.1:8080/v1/audio/speech", json=backend_payload
-                    )
-                    resp_backend = await client.send(req_backend, stream=True)
-                    if resp_backend.status_code != 200:
-                        err_content = await resp_backend.aread()
-                        await client.aclose()
-                        raise HTTPException(status_code=resp_backend.status_code, detail=err_content.decode("utf-8"))
+            accept_header = request.headers.get("accept", "").lower()
+            is_sse = (req.stream_format == "sse") or ("text/event-stream" in accept_header)
+            target_sr = int(req.sample_rate or 24000)
+            fmt = (req.response_format or "wav").lower()
 
-                    return StreamingResponse(
-                        resp_backend.aiter_bytes(),
-                        status_code=200,
-                        media_type="audio/wav",
-                        background=client.aclose,
-                    )
-                except Exception as e:
-                    await client.aclose()
-                    if isinstance(e, HTTPException):
-                        raise e
-                    raise HTTPException(status_code=500, detail=f"Lỗi khi kết nối audio.cpp server: {str(e)}")
-
-            # Yêu cầu tải toàn bộ file một lần
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            # Yêu cầu tải audio từ audio.cpp backend
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 try:
                     resp = await client.post("http://127.0.0.1:8080/v1/audio/speech", json=backend_payload)
                 except Exception as e:
@@ -366,19 +381,58 @@ class AudioCppService:
 
                 audio_bytes = resp.content
 
-                # Tự động transcode sang MP3 nếu client yêu cầu response_format="mp3"
-                if req.response_format == "mp3":
-                    proc = subprocess.Popen(
-                        ["ffmpeg", "-y", "-i", "pipe:0", "-f", "mp3", "pipe:1"],
-                        stdin=subprocess.PIPE,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.DEVNULL,
-                    )
-                    mp3_data, _ = proc.communicate(input=audio_bytes)
-                    if proc.returncode == 0 and mp3_data:
-                        return Response(content=mp3_data, media_type="audio/mpeg")
+            # 1. Trả về Server-Sent Events (SSE) theo chuẩn OpenAI / epub-to-audio
+            if is_sse:
+                pcm_bytes, _ = transcode_audio(audio_bytes, fmt="pcm", sample_rate=target_sr, channels=1)
 
-                return Response(content=audio_bytes, media_type="audio/wav")
+                def sse_generator():
+                    input_tokens = max(1, len(text.split()))
+                    output_tokens = 0
+                    chunk_size = target_sr * 2 // 5  # ~200ms mỗi chunk (9600 bytes ở 24kHz 16-bit mono)
+                    for i in range(0, len(pcm_bytes), chunk_size):
+                        chunk = pcm_bytes[i : i + chunk_size]
+                        if not chunk:
+                            continue
+                        b64_audio = base64.b64encode(chunk).decode("ascii")
+                        output_tokens += max(1, int(len(chunk) / (target_sr // 50)))
+                        delta_payload = {
+                            "type": "speech.audio.delta",
+                            "audio": b64_audio,
+                        }
+                        yield f"event: speech.audio.delta\ndata: {json.dumps(delta_payload)}\n\n"
+
+                    done_payload = {
+                        "type": "speech.audio.done",
+                        "usage": {
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "total_tokens": input_tokens + output_tokens,
+                        },
+                    }
+                    yield f"event: speech.audio.done\ndata: {json.dumps(done_payload)}\n\n"
+
+                return StreamingResponse(
+                    sse_generator(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "Connection": "keep-alive",
+                        "X-Accel-Buffering": "no",
+                    },
+                )
+
+            # 2. Trả về raw PCM nếu client yêu cầu response_format="pcm"
+            if fmt == "pcm":
+                pcm_bytes, mime = transcode_audio(audio_bytes, fmt="pcm", sample_rate=target_sr, channels=1)
+                return Response(content=pcm_bytes, media_type=mime)
+
+            # 3. Trả về các định dạng đã nén khác (mp3, opus, aac, flac)
+            if fmt != "wav":
+                out_bytes, mime = transcode_audio(audio_bytes, fmt=fmt, sample_rate=target_sr)
+                return Response(content=out_bytes, media_type=mime)
+
+            # 4. Mặc định trả về WAV
+            return Response(content=audio_bytes, media_type="audio/wav")
 
         web.include_router(v1_router)
         return web
