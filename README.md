@@ -1,12 +1,13 @@
-# VieNeu-TTS v3 Turbo on Modal
+# VieNeu-TTS v3 Turbo GGUF on Modal (audio.cpp C++ Engine)
 
-Triển khai **VieNeu-TTS v3 Turbo** — mô hình Text-to-Speech (TTS) tiếng Việt chất lượng cao chạy trên ONNX Runtime — lên [Modal](https://modal.com) thành một **Serverless API tương thích chuẩn OpenAI Audio Speech**.
+Triển khai **VieNeu-TTS v3 Turbo GGUF** — mô hình Text-to-Speech (TTS) tiếng Việt chất lượng cao chạy trên C++ runtime **audio.cpp** — lên [Modal](https://modal.com) thành một **Serverless API tương thích chuẩn OpenAI Audio Speech**, với preset mặc định giọng đọc **Ngọc Huyền**.
 
-Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**, container tự động bật khi có request và scale về 0 khi không dùng, cho phép bạn sở hữu riêng một endpoint TTS cá nhân với hàng trăm ngàn lượt đọc mỗi tháng hoàn toàn miễn phí.
+Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**, container tự động bật khi có request và scale về 0 khi không dùng. Với trọng số GGUF siêu nhẹ (163 MB) và engine C++ thuần, container khởi động và nạp model gần như tức thì (<0.01s), tốc độ sinh cực nhanh (RTF ~0.24 trên CPU, nhanh gấp 4.1x thời gian thực).
 
 > 💡 **Ước tính chi phí với cấu hình mặc định (2 CPU + 2 GiB RAM, Base Price 1.0×):**
 > - Đơn giá: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000306/giây`** (~`$0.110/giờ`).
-> - **$30 credit/tháng** đủ cho **~272 giờ compute liên tục**, tương đương **~490.000 câu đọc** (ước tính 2s/câu).
+> - Với RTF ~0.24, mỗi câu nói 3.5 giây chỉ mất **~0.85 giây compute**!
+> - **$30 credit/tháng** đủ cho **~1.150.000 câu đọc** (tối ưu gấp đôi so với ONNX CPU thông thường).
 
 ---
 
@@ -26,7 +27,7 @@ Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**,
   - [Health check](#health-check)
   - [Lấy danh sách giọng đọc](#lấy-danh-sách-giọng-đọc)
   - [Tạo file âm thanh (WAV / MP3)](#tạo-file-âm-thanh-wav--mp3)
-  - [Streaming âm thanh thật (PCM / SSE)](#streaming-âm-thanh-thật-pcm--sse)
+  - [Streaming âm thanh](#streaming-âm-thanh)
   - [Tích hợp với SDK OpenAI (Python & TypeScript)](#tích-hợp-với-sdk-openai)
   - [Tích hợp vào các UI/Chatbot (Dify, NextChat, Open WebUI)](#tích-hợp-vào-các-uichatbot)
 - [Bảng tham số API `POST /v1/audio/speech`](#bảng-tham-số-api-post-v1audiospeech)
@@ -39,14 +40,16 @@ Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**,
 
 ## Tính năng nổi bật
 
-- 🎙️ **VieNeu-TTS v3 Turbo**: Model TTS tiếng Việt phát âm tự nhiên, tốc độ sinh cực nhanh qua ONNX Runtime CPU (hoặc PyTorch GPU).
-- 🔌 **Chuẩn OpenAI Compatible**: Hỗ trợ route `/v1/audio/speech`, `/v1/models`, `/v1/audio/voices` — dùng chung được với OpenAI SDK, LangChain, LlamaIndex, Dify, v.v.
-- ⚡ **Ép INT8 & VNNI**: Tự động nhận diện phần cứng có tập lệnh AVX-512 VNNI / AVX-VNNI để kích hoạt tăng tốc INT8 tối đa.
-- 📸 **Modal Memory Snapshot**: Tải trước model vào RAM và đóng băng trạng thái (`enable_memory_snapshot=True`), giúp cold start container gần như tức thì (~200–500ms).
-- 🌊 **Streaming thật**: Hỗ trợ Server-Sent Events (`stream_format="sse"`), chunked WAV và raw PCM để phát âm thanh ngay khi đang sinh câu, không cần chờ hết văn bản.
-- 🗣️ **Hỗ trợ đa định dạng**: `wav`, `pcm`, `mp3`, `opus`, `aac`, `flac` (tự động chuyển đổi bằng `ffmpeg`).
-- 🔐 **Bảo mật**: Xác thực Bearer Token qua Modal Secret.
-- 💰 **Chi phí tối ưu**: Không ép buộc region, tránh phụ thu 1.15× – 1.75× của Modal.
+- ⚡ **audio.cpp C++ Engine**: Chạy mô hình VieNeu-TTS v3 Turbo hoàn toàn bằng C++ thuần (dựa trên `ggml`), nạp model bằng `mmap` tức thì (<0.01s), không phụ thuộc PyTorch lúc inference.
+- 📦 **GGUF Quantization (163 MB)**: Nén gọn Qwen3 talker backbone và codec MOSS-Audio-Tokenizer-Nano vào một file GGUF 163 MB duy nhất (`phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF`).
+- 🎙️ **Preset Giọng Ngọc Huyền**: Mặc định chất giọng chuẩn nữ miền Bắc, đọc diễn cảm tự nhiên với speaker embedding 192 chiều chuẩn xác.
+- 🔄 **Tự động G2P (Phonemizer)**: Tích hợp proxy siêu nhẹ chuyển đổi văn bản tiếng Việt tự nhiên sang chuỗi âm vị IPA trong ~1ms mà không đòi hỏi client phải tự xử lý.
+- 🔌 **Chuẩn OpenAI Compatible**: Hỗ trợ route `/v1/audio/speech`, `/v1/models`, `/v1/audio/voices` — tương thích trực tiếp với OpenAI SDK, Dify, NextChat, Open WebUI.
+- 🌊 **Streaming Audio**: Hỗ trợ truyền stream chunked WAV trực tiếp để phát âm thanh ngay lập tức.
+- 🗣️ **Hỗ trợ định dạng**: Mặc định `wav` (chất lượng 48 kHz cao cấp) hoặc `mp3` (tự động chuyển đổi bằng `ffmpeg`).
+- 🔐 **Bảo mật**: Xác thực Bearer Token qua Modal Secret (`API_KEY`).
+- 💰 **Chi phí tối ưu**: Chạy mượt mà trên 2 vCPU + 2 GiB RAM, không cần GPU đắt đỏ.
+
 
 ---
 

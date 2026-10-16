@@ -18,3 +18,8 @@ venv/
 # OS / editor
 .DS_Store
 Thumbs.db
+
+# Audio test outputs
+*.wav
+*.mp3
+scratch/

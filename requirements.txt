@@ -1,8 +1,9 @@
 # Dependencies cho CI/CD (syntax check, lint, Modal CLI) và môi trường dev local.
 #
 # LƯU Ý: đây KHÔNG phải dependencies runtime của app. App chạy trên Modal với
-# image riêng được khai báo trong modal_app.py (`vieneu`, `fastapi`, `numpy`,
-# `soundfile`, `torch`...) — image đó được build trên cloud, không cài ở đây.
+# image riêng được khai báo trong modal_app.py (dựa trên ghcr.io/0xshug0/audio.cpp,
+# fastapi, sea-g2p, httpx...) — image đó được build trên cloud, không cài ở đây.
 
-modal>=1.6.1
+modal>=1.6.2
 ruff>=0.17.0
+

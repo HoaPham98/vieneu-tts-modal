@@ -1,179 +1,218 @@
-import base64
-import io
+import functools
 import json
 import os
+import re
 import secrets
-import shutil
-import struct
 import subprocess
-import sys
+import time
+import urllib.request
 from pathlib import Path
 from typing import Literal, Optional
+
 import modal
 
 # =====================================================================
-# CẤU HÌNH PHẦN CỨNG & ÉP INT8
+# 1. CẤU HÌNH IMAGE CONTAINER DỰA TRÊN AUDIO.CPP DOCKER
 # =====================================================================
-USE_GPU = False
-REQUIRE_INT8 = True  # Đặt True để ép Modal chỉ nhận node có VNNI (int8)
 
-def patch_ort_symlinks():
-    """Bọc trực tiếp onnxruntime.InferenceSession để biến mọi symlink trong thư mục
-    chứa file .onnx và .data thành file thật (hardlink) ngay trước khi C++ engine mở file."""
-    import onnxruntime as ort
+NGOC_HUYEN_REF_PHONEMES = "tʃˈɔŋ fˈɔ2ŋ ɹˈəɜt̪ t̪ˈu2 mˈu2, nˌen kˈɔɜ tˈe4 zˈe5 zˈaː2ŋ tʃˈɛ zˈəɜw nˈɔɜ."
 
-    if getattr(ort.InferenceSession, "_is_patched", False):
-        return
 
-    _orig_init = ort.InferenceSession.__init__
+def get_server_config():
+    """Tạo cấu hình server.json cho audiocpp_server với preset Ngọc Huyền chuẩn embedding."""
+    return {
+        "host": "127.0.0.1",
+        "port": 8080,
+        "backend": "cpu",
+        "threads": 2,
+        "models": [
+            {
+                "id": "vieneu-v3-turbo",
+                "family": "vieneu_v3_turbo",
+                "path": "/app/models/VieNeu-TTS-v3-Turbo/model.gguf",
+                "task": "tts",
+                "mode": "offline",
+                "default_request_options": {
+                    "reference_codes_file": "/app/voices/ngoc_huyen.ref_codes.txt",
+                    "speaker_embedding_file": "/app/voices/ngoc_huyen.wav.emb.txt",
+                    "reference_text": NGOC_HUYEN_REF_PHONEMES,
+                },
+            }
+        ],
+    }
 
-    def _materialize_dir(directory: Path):
-        if not directory.exists():
-            return
-        for item in list(directory.iterdir()):
-            if item.is_symlink():
-                target = item.resolve()
-                if target.exists() and target.is_file():
-                    item.unlink()
-                    try:
-                        os.link(target, item)
-                    except OSError:
-                        shutil.copy2(target, item)
 
-    def _patched_init(self, path_or_bytes, sess_options=None, providers=None, **kwargs):
-        if isinstance(path_or_bytes, (str, os.PathLike)):
-            model_path = Path(path_or_bytes)
-            _materialize_dir(model_path.parent)
-            path_or_bytes = str(model_path)
-        return _orig_init(self, path_or_bytes, sess_options=sess_options, providers=providers, **kwargs)
+def download_models_and_setup():
+    """Hàm chạy 1 lần lúc build Modal image để tải trọng số GGUF và sinh server.json."""
+    model_dir = Path("/app/models/VieNeu-TTS-v3-Turbo")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    (model_dir / "speech_tokenizer").mkdir(parents=True, exist_ok=True)
 
-    ort.InferenceSession.__init__ = _patched_init
-    ort.InferenceSession._is_patched = True
+    base_url = "https://huggingface.co/phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF/resolve/main"
+    files = [
+        "model.gguf",
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "speech_tokenizer/config.json",
+    ]
 
-def download_models():
-    """Hàm chạy 1 lần lúc build image để tải và gỡ symlink sẵn vào ổ cứng."""
-    patch_ort_symlinks()
-    from vieneu import Vieneu
-    print("⏳ Đang tải sẵn trọng số VieNeu-TTS v3 Turbo vào Modal Image...")
-    Vieneu(mode="v3turbo", precision="fp32")
-    try:
-        Vieneu(mode="v3turbo", precision="int8")
-    except Exception:
-        pass
-    print("✅ Hoàn tất lưu cache model và gỡ bỏ toàn bộ symlink!")
+    for fname in files:
+        dest = model_dir / fname
+        if not dest.exists():
+            url = f"{base_url}/{fname}"
+            print(f"⏳ Đang tải {fname} từ {url}...")
+            urllib.request.urlretrieve(url, dest)
+            print(f"✅ Đã tải xong {fname} ({dest.stat().st_size} bytes)")
 
-# 1. Định nghĩa môi trường Container
-if USE_GPU:
-    image = (
-        modal.Image.debian_slim(python_version="3.11")
-        .apt_install("git", "curl", "ffmpeg", "espeak-ng", "libsndfile1")
-        .pip_install(
-            "torch", "torchaudio",
-            "vieneu>=3.7.1", "fastapi[standard]", "soundfile", "numpy"
-        )
-        .run_function(download_models)
+    # Tạo cấu hình server.json cho audiocpp_server
+    config_path = Path("/app/server.json")
+    config_path.write_text(json.dumps(get_server_config(), indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"✅ Đã tạo cấu hình server tại {config_path}")
+
+
+image = (
+    modal.Image.from_registry("ghcr.io/0xshug0/audio.cpp:full-cpu", add_python="3.11")
+    .dockerfile_commands("ENTRYPOINT []")
+    .apt_install("curl", "ffmpeg", "ca-certificates")
+    .pip_install(
+        "fastapi[standard]",
+        "httpx",
+        "sea-g2p>=0.10.0",
     )
-    compute_config = {"gpu": "T4", "memory": 4096}
-else:
-    image = (
-        modal.Image.debian_slim(python_version="3.11")
-        .apt_install("git", "curl", "ffmpeg", "espeak-ng", "libsndfile1")
-        .pip_install(
-            "vieneu>=3.7.1", "fastapi[standard]", "soundfile", "numpy"
-        )
-        .env({
-            "OMP_NUM_THREADS": "2",
-            "ORT_INTRA_OP_NUM_THREADS": "2",
-            "ORT_INTER_OP_NUM_THREADS": "1",
-        })
-        .run_function(download_models)
-    )
-    compute_config = {"cpu": 2.0, "memory": 2048}
+    .add_local_dir("preset_voices", "/app/voices", copy=True)
+    .run_function(download_models_and_setup)
+)
 
 app = modal.App("vieneu-tts-v3-turbo", image=image)
 
-def make_streaming_wav_header(sample_rate: int = 24000, channels: int = 1, bits_per_sample: int = 16) -> bytes:
-    """Tạo WAV header 44-byte với kích thước mở (0x7FFFFFFF) để phát trực tiếp qua HTTP chunked stream."""
-    byte_rate = sample_rate * channels * (bits_per_sample // 8)
-    block_align = channels * (bits_per_sample // 8)
-    data_size = 0x7FFFFFFF
-    return struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        data_size + 36,
-        b"WAVE",
-        b"fmt ",
-        16,
-        1,
-        channels,
-        sample_rate,
-        byte_rate,
-        block_align,
-        bits_per_sample,
-        b"data",
-        data_size,
-    )
+# =====================================================================
+# 2. XỬ LÝ PHIÊN ÂM TIẾNG VIỆT (G2P PHONEMIZER)
+# =====================================================================
 
-# 2. Khởi tạo Service Serverless kèm Memory Snapshot & Region Pinning
-@app.cls(
-    **compute_config,
-    secrets=[modal.Secret.from_name("vieneu-api-key")],
-    scaledown_window=60,
-    enable_memory_snapshot=True,  # Khóa cứng trạng thái RAM & kiến trúc CPU sau khi nạp int8
-    max_inputs=None if hasattr(modal, "concurrent") else 2,
-)
-@modal.concurrent(max_inputs=2)
-class VieNeuService:
-    @modal.enter(snap=True)
-    def load_model(self):
-        patch_ort_symlinks()
-        from vieneu import Vieneu
+_EMOTION_TAG_TO_K = {
+    "chuckle": 1, "cười": 1, "cuoi": 1,
+    "sigh": 2, "thở dài": 2, "tho dai": 2,
+    "clear throat": 3, "hắng giọng": 3, "hang giong": 3,
+}
+_EMOTION_SPLIT_RE = re.compile(r"(\[[^\]]+\]|<\|emotion_\d+\|>)")
+_pipeline = None
 
-        if USE_GPU:
-            self.precision = "fp16/cuda"
-            self.tts = Vieneu(mode="v3turbo")
+
+def get_pipeline():
+    global _pipeline
+    if _pipeline is None:
+        from sea_g2p import SEAPipeline
+        _pipeline = SEAPipeline(lang="vi")
+    return _pipeline
+
+
+def _emotion_tag_token(tag: str) -> Optional[str]:
+    t = tag.strip()
+    if t.startswith("<|"):
+        return t
+    inner = t[1:-1].strip().lower()
+    k = _EMOTION_TAG_TO_K.get(inner)
+    return f"<|emotion_{k}|>" if k is not None else None
+
+
+@functools.lru_cache(maxsize=1024)
+def phonemize_vietnamese(text: str) -> str:
+    """Chuyển đổi văn bản tiếng Việt sang chuỗi âm vị IPA mà mô hình VieNeu-TTS yêu cầu."""
+    pipeline = get_pipeline()
+    tokens = _EMOTION_SPLIT_RE.split(text)
+    if len(tokens) == 1:
+        return pipeline.run(text, punc_norm=True)
+
+    parts = []
+    for token in tokens:
+        if not token:
+            continue
+        em_tok = _emotion_tag_token(token)
+        if em_tok is not None:
+            parts.append(em_tok)
         else:
-            cpuinfo = Path("/proc/cpuinfo").read_text().lower()
-            # Kiểm tra tên CPU và cờ tập lệnh VNNI
-            model_name = ""
-            for line in cpuinfo.splitlines():
-                if "model name" in line:
-                    model_name = line.split(":", 1)[-1].strip()
-                    break
+            ph = pipeline.run(token, punc_norm=False).strip()
+            if ph:
+                parts.append(ph)
 
-            has_vnni = any(flag in cpuinfo for flag in ("avx512_vnni", "avx_vnni", "vnni"))
-            print(f"🔍 [CPU Check] Node CPU: '{model_name}' | VNNI Support: {has_vnni}")
+    res = " ".join(parts).strip()
+    if res and not any(res.endswith(p) for p in ".,!?;:…"):
+        res += "."
+    return res
 
-            if REQUIRE_INT8 and not has_vnni:
-                print("⚠️ Node hiện tại không có VNNI (int8). Tự động từ chối node này để Modal cấp node Intel Xeon/Zen 4 mới...")
-                sys.exit(1)
 
-            self.precision = "int8" if has_vnni else "fp32"
-            self.cpu_model = model_name
-            self.tts = Vieneu(mode="v3turbo", precision=self.precision)
+# =====================================================================
+# 3. SERVICE SERVERLESS KÈM TIẾN TRÌNH C++ VÀ FASTAPI PROXY
+# =====================================================================
 
-        raw_voices = self.tts.list_preset_voices()
-        self.voice_list = []
-        for v in raw_voices:
-            if isinstance(v, (tuple, list)) and len(v) >= 2:
-                desc, vid = str(v[0]), str(v[1])
+@app.cls(
+    cpu=2.0,
+    memory=4096,
+    scaledown_window=60,
+    secrets=[modal.Secret.from_name("vieneu-api-key")],
+)
+class AudioCppService:
+    proc: Optional[subprocess.Popen] = None
+
+    @modal.enter()
+    def start_server(self):
+        """Khởi động tiến trình audiocpp_server ngầm trên cổng nội bộ 8080."""
+        import shutil
+        import httpx
+
+        if AudioCppService.proc is None or AudioCppService.proc.poll() is not None:
+            # Đảm bảo /app/server.json luôn khớp cấu hình chuẩn mới nhất
+            try:
+                Path("/app/server.json").write_text(
+                    json.dumps(get_server_config(), indent=2, ensure_ascii=False),
+                    encoding="utf-8"
+                )
+            except Exception as e:
+                print(f"⚠️ Cảnh báo ghi /app/server.json: {e}")
+
+            print("🚀 Đang khởi động audiocpp_server subprocess...")
+            server_bin = shutil.which("audiocpp_server") or ("/app/audiocpp_server" if Path("/app/audiocpp_server").exists() else None)
+            if server_bin:
+                args = [server_bin, "--config", "/app/server.json", "--backend", "cpu"]
+            elif Path("/app/entrypoint.sh").exists():
+                args = ["/app/entrypoint.sh", "server", "--config", "/app/server.json", "--backend", "cpu"]
             else:
-                desc = vid = str(v)
-            self.voice_list.append({"id": vid, "name": vid, "description": desc})
+                args = ["audiocpp_server", "--config", "/app/server.json", "--backend", "cpu"]
 
-        print(f"📸 Đã khóa Memory Snapshot thành công! (Precision: {self.precision}, CPU: {getattr(self, 'cpu_model', 'GPU')})")
+            print(f"🚀 Chạy lệnh backend: {' '.join(args)}")
+            AudioCppService.proc = subprocess.Popen(
+                args,
+                cwd="/app",
+            )
+
+            # Polling kiểm tra health check
+            for _ in range(40):
+                exit_code = AudioCppService.proc.poll()
+                if exit_code is not None:
+                    print(f"❌ audiocpp_server đã dừng với exit code {exit_code}")
+                    break
+                try:
+                    res = httpx.get("http://127.0.0.1:8080/health", timeout=1.0)
+                    if res.status_code == 200:
+                        print("✅ audiocpp_server C++ đã sẵn sàng phục vụ trên cổng nội bộ 8080!")
+                        return
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            print("⚠️ Cảnh báo: audiocpp_server chưa phản hồi healthcheck kịp thời, tiếp tục tiến trình...")
 
     @modal.asgi_app()
     def web_app(self):
-        import numpy as np
-        import soundfile as sf
-        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
+        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Security, status
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import Response, StreamingResponse
         from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+        import httpx
         from pydantic import BaseModel
 
-        web = FastAPI(title="VieNeu-TTS v3 Turbo OpenAI-Compatible API", version="1.3.0")
+        web = FastAPI(title="VieNeu-TTS v3 Turbo (audio.cpp GGUF) OpenAI API", version="2.0.0")
 
         web.add_middleware(
             CORSMiddleware,
@@ -186,9 +225,7 @@ class VieNeuService:
         security = HTTPBearer(auto_error=False)
         EXPECTED_API_KEY = os.environ.get("API_KEY", "").strip()
 
-        def verify_api_key(
-            credentials: Optional[HTTPAuthorizationCredentials] = Security(security),
-        ):
+        def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)):
             if not EXPECTED_API_KEY:
                 return
             if (
@@ -211,8 +248,8 @@ class VieNeuService:
 
         v1_router = APIRouter(prefix="/v1", dependencies=[Depends(verify_api_key)])
 
-        DEFAULT_VOICE = self.voice_list[0]["id"] if self.voice_list else "Minh Quân"
-        OPENAI_VOICE_ALIAS = {
+        DEFAULT_VOICE = "Ngọc Huyền"
+        OPENAI_VOICE_ALIASES = {
             "alloy": DEFAULT_VOICE,
             "echo": DEFAULT_VOICE,
             "fable": DEFAULT_VOICE,
@@ -227,208 +264,121 @@ class VieNeuService:
         }
 
         AVAILABLE_MODELS = [
-            {
-                "id": "vieneu-v3-turbo",
-                "object": "model",
-                "created": 1740000000,
-                "owned_by": "pnnbao-ump",
-            },
-            {
-                "id": "gpt-4o-mini-tts",
-                "object": "model",
-                "created": 1740000000,
-                "owned_by": "openai-compatible",
-            },
-            {
-                "id": "tts-1",
-                "object": "model",
-                "created": 1740000000,
-                "owned_by": "openai-compatible",
-            },
-            {
-                "id": "tts-1-hd",
-                "object": "model",
-                "created": 1740000000,
-                "owned_by": "openai-compatible",
-            },
+            {"id": "vieneu-v3-turbo", "object": "model", "created": 1740000000, "owned_by": "pnnbao-ump"},
+            {"id": "gpt-4o-mini-tts", "object": "model", "created": 1740000000, "owned_by": "openai-compatible"},
+            {"id": "tts-1", "object": "model", "created": 1740000000, "owned_by": "openai-compatible"},
+            {"id": "tts-1-hd", "object": "model", "created": 1740000000, "owned_by": "openai-compatible"},
         ]
 
         class SpeechRequest(BaseModel):
             model: str = "vieneu-v3-turbo"
             input: str
-            voice: str = DEFAULT_VOICE
+            voice: Optional[str] = DEFAULT_VOICE
             response_format: Literal["mp3", "opus", "aac", "flac", "wav", "pcm"] = "wav"
-            stream_format: Optional[Literal["sse", "audio"]] = None
             speed: Optional[float] = 1.0
-            instructions: Optional[str] = None
             stream: bool = False
-            sample_rate: Optional[Literal[24000, 48000]] = 24000
-
-        def format_chunk_pcm16(chunk_48k: np.ndarray, target_sr: int = 24000, speed: float = 1.0) -> np.ndarray:
-            arr = np.asarray(chunk_48k, dtype=np.float32)
-            if len(arr) == 0:
-                return np.array([], dtype=np.int16)
-
-            if target_sr == 24000 and abs(speed - 1.0) < 1e-3:
-                n = (len(arr) // 2) * 2
-                if n > 0:
-                    arr = 0.5 * (arr[:n:2] + arr[1:n:2])
-            else:
-                effective_ratio = (48000.0 / float(target_sr)) * float(speed)
-                out_len = max(1, int(len(arr) / effective_ratio))
-                idx = np.linspace(0, len(arr) - 1, out_len, dtype=np.float32)
-                arr = np.interp(idx, np.arange(len(arr), dtype=np.float32), arr)
-
-            return (np.clip(arr, -1.0, 1.0) * 32767.0).astype(np.int16)
 
         @web.get("/")
+        @web.get("/health")
         def health():
             return {
                 "status": "ok",
+                "engine": "audio.cpp C++ Runtime (GGUF)",
+                "model": "phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF",
+                "default_voice": DEFAULT_VOICE,
                 "auth_enabled": bool(EXPECTED_API_KEY),
-                "engine": "GPU (CUDA)" if USE_GPU else "CPU (ONNX Runtime)",
-                "precision": self.precision,
-                "cpu_model": getattr(self, "cpu_model", "GPU"),
-                "stream_sample_rate": 24000,
-                "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/voices", "/v1/audio/speech"],
+                "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/audio/speech"],
             }
 
         @v1_router.get("/models")
         def list_models():
             return {"object": "list", "data": AVAILABLE_MODELS}
 
-        @v1_router.get("/models/{model_id}")
-        def retrieve_model(model_id: str):
-            for m in AVAILABLE_MODELS:
-                if m["id"] == model_id:
-                    return m
-            return {
-                "id": model_id,
-                "object": "model",
-                "created": 1740000000,
-                "owned_by": "pnnbao-ump",
-            }
-
         @v1_router.get("/audio/voices")
         @v1_router.get("/voices")
         def list_voices():
+            voice_meta = {
+                "id": DEFAULT_VOICE,
+                "name": DEFAULT_VOICE,
+                "description": "Nữ · Bắc · Giọng đọc tự nhiên (Chuẩn preset VieNeu-TTS)",
+                "language": "vi-VN",
+            }
             return {
                 "object": "list",
-                "voices": [
-                    {
-                        "id": v["id"],
-                        "voice_id": v["id"],
-                        "name": v["name"],
-                        "description": v["description"],
-                        "language": "vi-VN",
-                    }
-                    for v in self.voice_list
-                ],
-                "data": [
-                    {
-                        "id": v["id"],
-                        "object": "voice",
-                        "name": v["name"],
-                        "description": v["description"],
-                        "language": "vi-VN",
-                    }
-                    for v in self.voice_list
-                ],
+                "voices": [voice_meta],
+                "data": [{**voice_meta, "object": "voice"}],
             }
 
         @v1_router.post("/audio/speech")
-        def create_speech(req: SpeechRequest, request: Request):
+        async def create_speech(req: SpeechRequest):
             text = req.input.strip()
             if not text:
                 raise HTTPException(status_code=400, detail="Text input cannot be empty.")
 
-            resolved_voice = OPENAI_VOICE_ALIAS.get(req.voice.lower(), req.voice)
-            speed = float(req.speed or 1.0)
-            target_sr = int(req.sample_rate or 24000)
-            accept_header = request.headers.get("accept", "").lower()
+            voice_req = (req.voice or DEFAULT_VOICE).strip()
+            _ = OPENAI_VOICE_ALIASES.get(voice_req.lower(), voice_req)
 
-            if req.stream_format == "sse" or "text/event-stream" in accept_header:
-                def sse_generator():
-                    input_tokens = max(1, len(text.split()))
-                    output_tokens = 0
+            # Chuyển đổi text tiếng Việt tự nhiên sang chuỗi âm vị IPA
+            ipa_text = phonemize_vietnamese(text)
 
-                    for chunk in self.tts.infer_stream(text, voice=resolved_voice):
-                        pcm16 = format_chunk_pcm16(chunk, target_sr=target_sr, speed=speed)
-                        if len(pcm16) == 0:
-                            continue
-                        b64_audio = base64.b64encode(pcm16.tobytes()).decode("ascii")
-                        output_tokens += max(1, int(len(pcm16) / (target_sr // 50)))
-
-                        delta_payload = {
-                            "type": "speech.audio.delta",
-                            "audio": b64_audio,
-                        }
-                        yield f"event: speech.audio.delta\ndata: {json.dumps(delta_payload)}\n\n"
-
-                    done_payload = {
-                        "type": "speech.audio.done",
-                        "usage": {
-                            "input_tokens": input_tokens,
-                            "output_tokens": output_tokens,
-                            "total_tokens": input_tokens + output_tokens,
-                        },
-                    }
-                    yield f"event: speech.audio.done\ndata: {json.dumps(done_payload)}\n\n"
-
-                return StreamingResponse(
-                    sse_generator(),
-                    media_type="text/event-stream",
-                    headers={
-                        "Cache-Control": "no-cache",
-                        "Connection": "keep-alive",
-                        "X-Accel-Buffering": "no",
-                    },
-                )
-
-            if req.stream or req.response_format == "pcm":
-                if req.response_format == "wav":
-                    def wav_stream_generator():
-                        yield make_streaming_wav_header(sample_rate=target_sr)
-                        for chunk in self.tts.infer_stream(text, voice=resolved_voice):
-                            pcm16 = format_chunk_pcm16(chunk, target_sr=target_sr, speed=speed)
-                            if len(pcm16) > 0:
-                                yield pcm16.tobytes()
-                    return StreamingResponse(wav_stream_generator(), media_type="audio/wav")
-
-                def pcm_generator():
-                    for chunk in self.tts.infer_stream(text, voice=resolved_voice):
-                        pcm16 = format_chunk_pcm16(chunk, target_sr=target_sr, speed=speed)
-                        if len(pcm16) > 0:
-                            yield pcm16.tobytes()
-                return StreamingResponse(pcm_generator(), media_type="audio/pcm")
-
-            audio = self.tts.infer(text, voice=resolved_voice)
-            if abs(speed - 1.0) >= 1e-3:
-                pcm_full = format_chunk_pcm16(audio, target_sr=48000, speed=speed)
-                wav_buf = io.BytesIO()
-                sf.write(wav_buf, pcm_full, 48000, format="WAV", subtype="PCM_16")
-            else:
-                wav_buf = io.BytesIO()
-                sf.write(wav_buf, audio, 48000, format="WAV", subtype="PCM_16")
-            wav_bytes = wav_buf.getvalue()
-
-            if req.response_format == "wav":
-                return Response(content=wav_bytes, media_type="audio/wav")
-
-            mime_map = {
-                "mp3": ("mp3", "audio/mpeg"),
-                "opus": ("opus", "audio/opus"),
-                "aac": ("adts", "audio/aac"),
-                "flac": ("flac", "audio/flac"),
+            backend_payload = {
+                "model": "vieneu-v3-turbo",
+                "input": ipa_text,
             }
-            fmt_arg, mime_type = mime_map[req.response_format]
-            proc = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", "pipe:0", "-f", fmt_arg, "pipe:1"],
-                input=wav_bytes,
-                capture_output=True,
-                check=True,
-            )
-            return Response(content=proc.stdout, media_type=mime_type)
+
+            if req.speed and abs(req.speed - 1.0) > 1e-3:
+                backend_payload["speed"] = req.speed
+
+            # Nếu client yêu cầu streaming
+            if req.stream:
+                client = httpx.AsyncClient(timeout=60.0)
+                try:
+                    req_backend = client.build_request(
+                        "POST", "http://127.0.0.1:8080/v1/audio/speech", json=backend_payload
+                    )
+                    resp_backend = await client.send(req_backend, stream=True)
+                    if resp_backend.status_code != 200:
+                        err_content = await resp_backend.aread()
+                        await client.aclose()
+                        raise HTTPException(status_code=resp_backend.status_code, detail=err_content.decode("utf-8"))
+
+                    return StreamingResponse(
+                        resp_backend.aiter_bytes(),
+                        status_code=200,
+                        media_type="audio/wav",
+                        background=client.aclose,
+                    )
+                except Exception as e:
+                    await client.aclose()
+                    if isinstance(e, HTTPException):
+                        raise e
+                    raise HTTPException(status_code=500, detail=f"Lỗi khi kết nối audio.cpp server: {str(e)}")
+
+            # Yêu cầu tải toàn bộ file một lần
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                try:
+                    resp = await client.post("http://127.0.0.1:8080/v1/audio/speech", json=backend_payload)
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Không thể kết nối đến audio.cpp server: {str(e)}")
+
+                if resp.status_code != 200:
+                    raise HTTPException(status_code=resp.status_code, detail=resp.text)
+
+                audio_bytes = resp.content
+
+                # Tự động transcode sang MP3 nếu client yêu cầu response_format="mp3"
+                if req.response_format == "mp3":
+                    proc = subprocess.Popen(
+                        ["ffmpeg", "-y", "-i", "pipe:0", "-f", "mp3", "pipe:1"],
+                        stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    mp3_data, _ = proc.communicate(input=audio_bytes)
+                    if proc.returncode == 0 and mp3_data:
+                        return Response(content=mp3_data, media_type="audio/mpeg")
+
+                return Response(content=audio_bytes, media_type="audio/wav")
 
         web.include_router(v1_router)
         return web
