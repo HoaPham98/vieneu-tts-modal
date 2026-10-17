@@ -1,0 +1,27 @@
+services:
+  vieneu-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vieneu-tts:latest
+    container_name: vieneu-tts-server
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      # Số luồng CPU (khuyến nghị 4 cho OCI Ampere A1 4 OCPU, hoặc điều chỉnh theo máy chủ)
+      - THREADS=${THREADS:-4}
+      # Bearer API Key để bảo vệ endpoint /v1/audio/* (để trống nếu cho phép truy cập tự do)
+      - API_KEY=${API_KEY:-}
+      - PORT=8000
+      - BACKEND_PORT=8080
+    # Tùy chọn: Nếu muốn nạp voice hoặc checkpoint GGUF khác ngoài host:
+    # volumes:
+    #   - ./models:/app/models
+    #   - ./preset_voices:/app/voices
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s

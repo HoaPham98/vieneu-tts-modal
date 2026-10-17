@@ -21,6 +21,11 @@ Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**,
   - [Bước 2: Cài đặt và đăng nhập Modal CLI](#bước-2-cài-đặt-và-đăng-nhập-modal-cli)
   - [Bước 3: Tạo Modal Secret lưu API Key](#bước-3-tạo-modal-secret-lưu-api-key)
   - [Bước 4: Deploy lên Modal](#bước-4-deploy-lên-modal)
+- [Triển khai bằng Docker & VPS (Tối ưu cho OCI ARM64)](#triển-khai-bằng-docker--vps-tối-ưu-cho-oci-arm64)
+  - [Chạy nhanh bằng Docker Compose](#chạy-nhanh-bằng-docker-compose)
+  - [Build Docker Image cục bộ](#build-docker-image-cục-bộ)
+  - [Cấu hình trên VPS OCI Ampere A1 (ARM64)](#cấu-hình-trên-vps-oci-ampere-a1-arm64)
+  - [Tự động hóa Multi-Arch Build bằng GitHub Actions](#tự-động-hóa-multi-arch-build-bằng-github-actions)
 - [Tùy chọn: Tự động hóa CI/CD bằng GitHub Actions (Fork)](#tùy-chọn-tự-động-hóa-cicd-bằng-github-actions-fork)
 - [Hướng dẫn sử dụng API](#hướng-dẫn-sử-dụng-api)
   - [Xác định Base URL của bạn](#xác-định-base-url-của-bạn)
@@ -149,6 +154,79 @@ Sau khi deploy thành công, terminal sẽ in ra URL của ứng dụng, có d�
 ✓ Created objects.
 ├── 🔨 Created web function web_app => https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run
 ```
+
+---
+
+## Triển khai bằng Docker & VPS (Tối ưu cho OCI ARM64)
+
+Ngoài việc chạy Serverless trên Modal, bạn hoàn toàn có thể tự lưu trữ (self-host) server trên VPS riêng hoặc máy cá nhân bằng Docker. Ứng dụng đã được đóng gói sẵn kiến trúc tiến trình kép (C++ backend `audio.cpp` + FastAPI gateway), hỗ trợ đầy đủ các kiến trúc **`linux/arm64` (đặc biệt tối ưu cho Oracle Cloud Ampere A1)** và **`linux/amd64`**.
+
+### Chạy nhanh bằng Docker Compose
+
+Khởi động server chỉ với 1 lệnh:
+
+```bash
+# Đặt API_KEY (tùy chọn) và số luồng CPU (khuyến nghị 4 cho OCI Ampere A1)
+export API_KEY="my-secret-key-123"
+export THREADS=4
+
+docker compose up -d
+```
+
+Kiểm tra log container:
+```bash
+docker compose logs -f
+```
+
+### Build Docker Image cục bộ
+
+Nếu muốn tự build image trên máy của bạn:
+
+```bash
+docker build -t vieneu-tts:latest .
+
+# Chạy container
+docker run -d \
+  -p 8000:8000 \
+  -e API_KEY="my-secret-key-123" \
+  -e THREADS=4 \
+  --name vieneu-tts \
+  vieneu-tts:latest
+```
+
+### Cấu hình trên VPS OCI Ampere A1 (ARM64)
+
+Máy ảo Oracle Cloud Infrastructure (OCI) Ampere A1 (Free Tier cung cấp tới 4 OCPU, 24 GB RAM) là nền tảng cực kỳ lý tưởng để host VieNeu-TTS:
+
+1. **Mở cổng 8000 trên OCI Security List (VCN)**:
+   - Vào OCI Console > **Networking** > **Virtual Cloud Networks** > Chọn VCN và Subnet của bạn.
+   - Chọn **Default Security List** > **Add Ingress Rules**:
+     - Source CIDR: `0.0.0.0/0`
+     - IP Protocol: `TCP`
+     - Destination Port Range: `8000`
+2. **Mở cổng trong firewall nội bộ của VM (Ubuntu)**:
+   ```bash
+   sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8000 -j ACCEPT
+   sudo netfilter-persistent save
+   # Hoặc nếu dùng ufw:
+   sudo ufw allow 8000/tcp
+   ```
+3. **Chạy server với 4 threads**:
+   ```bash
+   THREADS=4 API_KEY="your-key" docker compose up -d
+   ```
+   > 💡 Với 4 nhân ARM Neoverse-N1 và tập lệnh ARM NEON, tốc độ RTF đạt ~0.2x (câu đọc 3.5 giây chỉ mất ~0.7s để sinh âm thanh).
+
+### Tự động hóa Multi-Arch Build bằng GitHub Actions
+
+Repo đã cấu hình sẵn workflow [`.github/workflows/docker-build.yml`](.github/workflows/docker-build.yml):
+- Tự động kích hoạt khi push vào nhánh `main` hoặc gắn thẻ phiên bản (`v*.*.*`).
+- Sử dụng QEMU và Docker Buildx để build song song cho cả hai kiến trúc `linux/amd64` và `linux/arm64`.
+- Tự động đẩy image lên GitHub Container Registry (GHCR): `ghcr.io/<tên-user-hoặc-org>/vieneu-tts-modal:latest`.
+- Để sử dụng image dựng sẵn từ GHCR trên VPS:
+  ```bash
+  docker pull ghcr.io/<tên-user>/vieneu-tts-modal:latest
+  ```
 
 ---
 
