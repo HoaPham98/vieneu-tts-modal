@@ -35,19 +35,19 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 # 3. Copy thư mục preset voices mặc định (Ngọc Huyền)
 COPY preset_voices /app/voices
 
-# 4. Tải trọng số mô hình GGUF và config từ Hugging Face
+# 4. Tải trọng số mô hình GGUF chính thức từ Hugging Face (188 MB, Codec f16 +4 dB SNR)
 RUN mkdir -p /app/models/VieNeu-TTS-v3-Turbo/speech_tokenizer && \
-    BASE_URL="https://huggingface.co/phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF/resolve/main" && \
-    echo "⏳ Đang tải file model.gguf (~163 MB)..." && \
-    curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/model.gguf "${BASE_URL}/model.gguf" && \
+    BASE_URL="https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main" && \
+    echo "⏳ Đang tải file vieneu-v3-turbo-q8_0.gguf chính thức (~188 MB)..." && \
+    curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/model.gguf "${BASE_URL}/gguf/vieneu-v3-turbo-q8_0.gguf" && \
     curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/config.json "${BASE_URL}/config.json" && \
     curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/tokenizer.json "${BASE_URL}/tokenizer.json" && \
     curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/tokenizer_config.json "${BASE_URL}/tokenizer_config.json" && \
     curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/special_tokens_map.json "${BASE_URL}/special_tokens_map.json" && \
-    curl -sSfL -o /app/models/VieNeu-TTS-v3-Turbo/speech_tokenizer/config.json "${BASE_URL}/speech_tokenizer/config.json" && \
-    echo "✅ Tải trọng số mô hình hoàn tất."
+    echo "✅ Tải trọng số mô hình GGUF chính thức hoàn tất."
 
 # 5. Copy mã nguồn server và entrypoint
+COPY webui.py /app/webui.py
 COPY server.py /app/server.py
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

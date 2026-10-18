@@ -15,11 +15,8 @@ import modal
 # 1. CẤU HÌNH IMAGE CONTAINER DỰA TRÊN AUDIO.CPP DOCKER
 # =====================================================================
 
-NGOC_HUYEN_REF_PHONEMES = "tʃˈɔŋ fˈɔ2ŋ ɹˈəɜt̪ t̪ˈu2 mˈu2, nˌen kˈɔɜ tˈe4 zˈe5 zˈaː2ŋ tʃˈɛ zˈəɜw nˈɔɜ."
-
-
 def get_server_config():
-    """Tạo cấu hình server.json cho audiocpp_server với preset Ngọc Huyền chuẩn embedding."""
+    """Tạo cấu hình server.json cho audiocpp_server với preset Minh Quân Pro chuẩn mặc định."""
     return {
         "host": "127.0.0.1",
         "port": 8080,
@@ -33,9 +30,8 @@ def get_server_config():
                 "task": "tts",
                 "mode": "offline",
                 "default_request_options": {
-                    "reference_codes_file": "/app/voices/ngoc_huyen.ref_codes.txt",
-                    "speaker_embedding_file": "/app/voices/ngoc_huyen.wav.emb.txt",
-                    "reference_text": NGOC_HUYEN_REF_PHONEMES,
+                    "reference_codes_file": "/app/voices/minh_quan_pro/ref_codes.txt",
+                    "speaker_embedding_file": "/app/voices/minh_quan_pro/speaker.emb.txt",
                 },
             }
         ],
@@ -48,20 +44,18 @@ def download_models_and_setup():
     model_dir.mkdir(parents=True, exist_ok=True)
     (model_dir / "speech_tokenizer").mkdir(parents=True, exist_ok=True)
 
-    base_url = "https://huggingface.co/phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF/resolve/main"
+    base_url = "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main"
     files = [
-        "model.gguf",
-        "config.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "speech_tokenizer/config.json",
+        ("model.gguf", f"{base_url}/gguf/vieneu-v3-turbo-q8_0.gguf"),
+        ("config.json", f"{base_url}/config.json"),
+        ("tokenizer.json", f"{base_url}/tokenizer.json"),
+        ("tokenizer_config.json", f"{base_url}/tokenizer_config.json"),
+        ("special_tokens_map.json", f"{base_url}/special_tokens_map.json"),
     ]
 
-    for fname in files:
+    for fname, url in files:
         dest = model_dir / fname
         if not dest.exists():
-            url = f"{base_url}/{fname}"
             print(f"⏳ Đang tải {fname} từ {url}...")
             urllib.request.urlretrieve(url, dest)
             print(f"✅ Đã tải xong {fname} ({dest.stat().st_size} bytes)")
@@ -82,6 +76,7 @@ image = (
         "sea-g2p>=0.10.0",
     )
     .add_local_dir("preset_voices", "/app/voices", copy=True)
+    .add_local_file("webui.py", "/app/webui.py", copy=True)
     .run_function(download_models_and_setup)
 )
 
@@ -208,10 +203,12 @@ class AudioCppService:
         import base64
         from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
         from fastapi.middleware.cors import CORSMiddleware
-        from fastapi.responses import Response, StreamingResponse
+        from fastapi.responses import HTMLResponse, Response, StreamingResponse
         from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
         import httpx
         from pydantic import BaseModel
+
+        from webui import get_webui_html
 
         web = FastAPI(title="VieNeu-TTS v3 Turbo (audio.cpp GGUF) OpenAI API", version="2.0.0")
 
@@ -249,20 +246,70 @@ class AudioCppService:
 
         v1_router = APIRouter(prefix="/v1", dependencies=[Depends(verify_api_key)])
 
-        DEFAULT_VOICE = "Ngọc Huyền"
+        VOICES_DIR = Path("/app/voices")
+        if not VOICES_DIR.exists() or not (VOICES_DIR / "manifest.json").exists():
+            local_voices = Path(__file__).parent / "preset_voices"
+            if local_voices.exists() and (local_voices / "manifest.json").exists():
+                VOICES_DIR = local_voices
+
+        DEFAULT_VOICE = "minh_quan_pro"
+        VOICE_CATALOG: dict[str, dict] = {}
+        VOICE_LIST: list[dict] = []
+
         OPENAI_VOICE_ALIASES = {
-            "alloy": DEFAULT_VOICE,
-            "echo": DEFAULT_VOICE,
-            "fable": DEFAULT_VOICE,
-            "onyx": DEFAULT_VOICE,
-            "nova": DEFAULT_VOICE,
-            "shimmer": DEFAULT_VOICE,
-            "ash": DEFAULT_VOICE,
-            "ballad": DEFAULT_VOICE,
-            "coral": DEFAULT_VOICE,
-            "sage": DEFAULT_VOICE,
-            "verse": DEFAULT_VOICE,
+            "alloy": "minh_quan_pro",
+            "echo": "minh_quan_pro",
+            "fable": "minh_quan_pro",
+            "onyx": "minh_quan_pro",
+            "nova": "ngoc_huyen",
+            "shimmer": "ngoc_huyen",
+            "ash": "anh_khoi",
+            "ballad": "thien_tam_duc",
+            "coral": "mai_anh",
+            "sage": "quang_son",
+            "verse": "thuy_dung",
         }
+
+        def load_voice_catalog():
+            nonlocal DEFAULT_VOICE
+            manifest_path = VOICES_DIR / "manifest.json"
+            if not manifest_path.exists():
+                return
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                DEFAULT_VOICE = manifest.get("default", "minh_quan_pro")
+                VOICE_CATALOG.clear()
+                VOICE_LIST.clear()
+                for v in manifest.get("voices", []):
+                    vid = v["id"]
+                    vdir = VOICES_DIR / vid
+                    meta = {
+                        "id": vid,
+                        "name": v.get("name", vid),
+                        "label": v.get("label", vid),
+                        "codes_file": str(vdir / "ref_codes.txt"),
+                        "emb_file": str(vdir / "speaker.emb.txt"),
+                    }
+                    VOICE_CATALOG[vid.lower()] = meta
+                    VOICE_CATALOG[v.get("name", "").lower()] = meta
+                    VOICE_LIST.append(meta)
+            except Exception as e:
+                print(f"⚠️ Error loading voice catalog from {manifest_path}: {e}")
+
+        load_voice_catalog()
+
+        def resolve_voice_meta(voice_input: Optional[str]) -> dict:
+            if not voice_input:
+                return VOICE_CATALOG.get(DEFAULT_VOICE.lower()) or (VOICE_LIST[0] if VOICE_LIST else {})
+            v_clean = voice_input.strip().lower()
+            if v_clean in OPENAI_VOICE_ALIASES:
+                v_clean = OPENAI_VOICE_ALIASES[v_clean]
+            if v_clean in VOICE_CATALOG:
+                return VOICE_CATALOG[v_clean]
+            for key, meta in VOICE_CATALOG.items():
+                if key == v_clean or key.replace("_", " ") == v_clean.replace("_", " "):
+                    return meta
+            return VOICE_CATALOG.get(DEFAULT_VOICE.lower()) or (VOICE_LIST[0] if VOICE_LIST else {})
 
         AVAILABLE_MODELS = [
             {"id": "vieneu-v3-turbo", "object": "model", "created": 1740000000, "owned_by": "pnnbao-ump"},
@@ -286,6 +333,9 @@ class AudioCppService:
             top_k: Optional[int] = None
             top_p: Optional[float] = None
             repetition_penalty: Optional[float] = None
+
+        class PhonemizeRequest(BaseModel):
+            input: str
 
         def transcode_audio(wav_data: bytes, fmt: str, sample_rate: int = 24000, channels: int = 1) -> tuple[bytes, str]:
             cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", "pipe:0"]
@@ -313,17 +363,28 @@ class AudioCppService:
                 return wav_data, "audio/wav"
             return out_bytes, mime_type
 
-        @web.get("/")
+        @web.get("/ui", response_class=HTMLResponse)
+        def ui_page():
+            return HTMLResponse(content=get_webui_html(api_key_enabled=bool(EXPECTED_API_KEY), default_voice=DEFAULT_VOICE))
+
         @web.get("/health")
         def health():
             return {
                 "status": "ok",
                 "engine": "audio.cpp C++ Runtime (GGUF)",
-                "model": "phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF",
+                "model": "pnnbao-ump/VieNeu-TTS-v3-Turbo-GGUF",
                 "default_voice": DEFAULT_VOICE,
+                "total_voices": len(VOICE_LIST),
                 "auth_enabled": bool(EXPECTED_API_KEY),
-                "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/audio/speech"],
+                "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/audio/speech", "/v1/audio/phonemize"],
             }
+
+        @web.get("/")
+        def root(request: Request):
+            accept = request.headers.get("accept", "").lower()
+            if "text/html" in accept:
+                return HTMLResponse(content=get_webui_html(api_key_enabled=bool(EXPECTED_API_KEY), default_voice=DEFAULT_VOICE))
+            return health()
 
         @v1_router.get("/models")
         def list_models():
@@ -332,16 +393,26 @@ class AudioCppService:
         @v1_router.get("/audio/voices")
         @v1_router.get("/voices")
         def list_voices():
-            voice_meta = {
-                "id": DEFAULT_VOICE,
-                "name": DEFAULT_VOICE,
-                "description": "Nữ · Bắc · Giọng đọc tự nhiên (Chuẩn preset VieNeu-TTS)",
-                "language": "vi-VN",
-            }
             return {
                 "object": "list",
-                "voices": [voice_meta],
-                "data": [{**voice_meta, "object": "voice"}],
+                "default": DEFAULT_VOICE,
+                "total": len(VOICE_LIST),
+                "voices": VOICE_LIST,
+                "data": [{**v, "object": "voice"} for v in VOICE_LIST],
+            }
+
+        @v1_router.api_route("/audio/phonemize", methods=["GET", "POST"])
+        def phonemize_endpoint(req: Optional[PhonemizeRequest] = None, text: Optional[str] = None):
+            input_text = ""
+            if req and req.input:
+                input_text = req.input.strip()
+            elif text:
+                input_text = text.strip()
+            if not input_text:
+                raise HTTPException(status_code=400, detail="Text input cannot be empty.")
+            return {
+                "input": input_text,
+                "phonemes": phonemize_vietnamese(input_text),
             }
 
         @v1_router.post("/audio/speech")
@@ -350,8 +421,7 @@ class AudioCppService:
             if not text:
                 raise HTTPException(status_code=400, detail="Text input cannot be empty.")
 
-            voice_req = (req.voice or DEFAULT_VOICE).strip()
-            _ = OPENAI_VOICE_ALIASES.get(voice_req.lower(), voice_req)
+            voice_meta = resolve_voice_meta(req.voice)
 
             # Chuyển đổi text tiếng Việt tự nhiên sang chuỗi âm vị IPA
             ipa_text = phonemize_vietnamese(text)
@@ -360,6 +430,12 @@ class AudioCppService:
                 "model": "vieneu-v3-turbo",
                 "input": ipa_text,
             }
+
+            if voice_meta and "codes_file" in voice_meta and "emb_file" in voice_meta:
+                backend_payload["options"] = {
+                    "reference_codes_file": voice_meta["codes_file"],
+                    "speaker_embedding_file": voice_meta["emb_file"],
+                }
 
             if req.speed and abs(req.speed - 1.0) > 1e-3:
                 backend_payload["speed"] = req.speed

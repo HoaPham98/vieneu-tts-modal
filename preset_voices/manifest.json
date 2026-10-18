@@ -1,0 +1,155 @@
+{
+ "default": "minh_quan_pro",
+ "voices": [
+  {
+   "id": "adam_bua",
+   "name": "Adam bựa",
+   "label": "⭐ Adam bựa — Nam · Bắc · Phong cách tự nhiên",
+   "frames": 91
+  },
+  {
+   "id": "truc_ly",
+   "name": "Trúc Ly",
+   "label": "⭐ Trúc Ly — Nữ · Bắc · Phong cách tự nhiên",
+   "frames": 59
+  },
+  {
+   "id": "anh_khoi",
+   "name": "Anh Khôi",
+   "label": "⭐ Anh Khôi — Nam · Bắc · Phong cách kể chuyện",
+   "frames": 53
+  },
+  {
+   "id": "mai_anh",
+   "name": "Mai Anh",
+   "label": "⭐ Mai Anh — Nữ · Bắc · Phong cách tin tức",
+   "frames": 73
+  },
+  {
+   "id": "minh_quan_pro",
+   "name": "Minh Quân Pro",
+   "label": "⭐ Minh Quân Pro — Nam · Bắc · Phong cách tự nhiên",
+   "frames": 68
+  },
+  {
+   "id": "thuy_dung",
+   "name": "Thùy Dung",
+   "label": "⭐ Thùy Dung — Nữ · Nam · Phong cách tin tức",
+   "frames": 54
+  },
+  {
+   "id": "thien_tam_duc",
+   "name": "Thiền Tâm Đức",
+   "label": "⭐ Thiền Tâm Đức — Nam · Bắc · Phong cách kể chuyện",
+   "frames": 98
+  },
+  {
+   "id": "ngoc_huyen",
+   "name": "Ngọc Huyền",
+   "label": "⭐ Ngọc Huyền — Nữ · Bắc · Giọng đọc tự nhiên",
+   "frames": 63
+  },
+  {
+   "id": "quang_son",
+   "name": "Quang Sơn",
+   "label": "⭐ Quang Sơn — Nam · Trung · Phong cách tự nhiên",
+   "frames": 43
+  },
+  {
+   "id": "ngoc_tran",
+   "name": "Ngọc Trân",
+   "label": "⭐ Ngọc Trân — Nữ · Trung · Phong cách tự nhiên",
+   "frames": 45
+  },
+  {
+   "id": "minh_duc",
+   "name": "Minh Đức",
+   "label": "Minh Đức — Nam · Bắc · Phong cách tin tức",
+   "frames": 50
+  },
+  {
+   "id": "pham_tuyen",
+   "name": "Phạm Tuyên",
+   "label": "Phạm Tuyên — Nam · Bắc · Phong cách tự nhiên",
+   "frames": 62
+  },
+  {
+   "id": "thai_son",
+   "name": "Thái Sơn",
+   "label": "Thái Sơn — Nam · Nam · Phong cách kể chuyện",
+   "frames": 49
+  },
+  {
+   "id": "xuan_vinh",
+   "name": "Xuân Vĩnh",
+   "label": "Xuân Vĩnh — Nam · Bắc · Phong cách tự nhiên",
+   "frames": 12
+  },
+  {
+   "id": "thanh_binh",
+   "name": "Thanh Bình",
+   "label": "Thanh Bình — Nam · Bắc · Phong cách kể chuyện",
+   "frames": 42
+  },
+  {
+   "id": "ngoc_linh",
+   "name": "Ngọc Linh",
+   "label": "Ngọc Linh — Nữ · Bắc · Phong cách kể chuyện",
+   "frames": 58
+  },
+  {
+   "id": "doan_trang",
+   "name": "Đoan Trang",
+   "label": "Đoan Trang — Nữ · Bắc · Phong cách tự nhiên",
+   "frames": 57
+  },
+  {
+   "id": "thuc_doan",
+   "name": "Thục Đoan",
+   "label": "Thục Đoan — Nữ · Nam · Phong cách kể chuyện",
+   "frames": 39
+  },
+  {
+   "id": "minh_triet",
+   "name": "Minh Triết",
+   "label": "Minh Triết — Nam · Nam · Phong cách tin tức",
+   "frames": 56
+  },
+  {
+   "id": "my_duyen",
+   "name": "Mỹ Duyên",
+   "label": "Mỹ Duyên — Nữ · Nam · Phong cách đọc truyện",
+   "frames": 74
+  },
+  {
+   "id": "quynh_anh",
+   "name": "Quỳnh Anh",
+   "label": "Quỳnh Anh — Nữ · Bắc · Phong cách đọc truyện",
+   "frames": 70
+  },
+  {
+   "id": "duc_tri",
+   "name": "Đức Trí",
+   "label": "Đức Trí — Nam · Nam · Phong cách đọc truyện",
+   "frames": 76
+  },
+  {
+   "id": "kim_thanh",
+   "name": "Kim Thanh",
+   "label": "Kim Thanh — Nữ · Nam · Phong cách đọc truyện",
+   "frames": 72
+  },
+  {
+   "id": "adam",
+   "name": "Adam",
+   "label": "Adam — Nam · Nam · Giọng đọc tự nhiên",
+   "frames": 38
+  },
+  {
+   "id": "manh_dung",
+   "name": "Mạnh Dũng",
+   "label": "Mạnh Dũng — Nam · Bắc · Phong cách tự nhiên",
+   "frames": 57
+  }
+ ]
+}

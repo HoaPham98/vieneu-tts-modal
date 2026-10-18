@@ -9,33 +9,89 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import httpx
 from pydantic import BaseModel
+
+from webui import get_webui_html
 
 # =====================================================================
 # 1. CẤU HÌNH VÀ THÔNG SỐ TOÀN CỤC
 # =====================================================================
 
-NGOC_HUYEN_REF_PHONEMES = "tʃˈɔŋ fˈɔ2ŋ ɹˈəɜt̪ t̪ˈu2 mˈu2, nˌen kˈɔɜ tˈe4 zˈe5 zˈaː2ŋ tʃˈɛ zˈəɜw nˈɔɜ."
+from pathlib import Path
+
+VOICES_DIR = Path(os.environ.get("VOICES_DIR", "/app/voices"))
+if not VOICES_DIR.exists() or not (VOICES_DIR / "manifest.json").exists():
+    local_voices = Path(__file__).parent / "preset_voices"
+    if local_voices.exists() and (local_voices / "manifest.json").exists():
+        VOICES_DIR = local_voices
+
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://127.0.0.1:8080").rstrip("/")
 EXPECTED_API_KEY = os.environ.get("API_KEY", "").strip()
 
-DEFAULT_VOICE = "Ngọc Huyền"
+DEFAULT_VOICE = "minh_quan_pro"
+VOICE_CATALOG: dict[str, dict] = {}
+VOICE_LIST: list[dict] = []
+
 OPENAI_VOICE_ALIASES = {
-    "alloy": DEFAULT_VOICE,
-    "echo": DEFAULT_VOICE,
-    "fable": DEFAULT_VOICE,
-    "onyx": DEFAULT_VOICE,
-    "nova": DEFAULT_VOICE,
-    "shimmer": DEFAULT_VOICE,
-    "ash": DEFAULT_VOICE,
-    "ballad": DEFAULT_VOICE,
-    "coral": DEFAULT_VOICE,
-    "sage": DEFAULT_VOICE,
-    "verse": DEFAULT_VOICE,
+    "alloy": "minh_quan_pro",
+    "echo": "minh_quan_pro",
+    "fable": "minh_quan_pro",
+    "onyx": "minh_quan_pro",
+    "nova": "ngoc_huyen",
+    "shimmer": "ngoc_huyen",
+    "ash": "anh_khoi",
+    "ballad": "thien_tam_duc",
+    "coral": "mai_anh",
+    "sage": "quang_son",
+    "verse": "thuy_dung",
 }
+
+def load_voice_catalog():
+    global DEFAULT_VOICE, VOICE_CATALOG, VOICE_LIST
+    manifest_path = VOICES_DIR / "manifest.json"
+    if not manifest_path.exists():
+        print(f"⚠️ Không tìm thấy manifest.json tại {manifest_path}")
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        DEFAULT_VOICE = manifest.get("default", "minh_quan_pro")
+        VOICE_CATALOG.clear()
+        VOICE_LIST.clear()
+        for v in manifest.get("voices", []):
+            vid = v["id"]
+            vdir = VOICES_DIR / vid
+            meta = {
+                "id": vid,
+                "name": v.get("name", vid),
+                "label": v.get("label", vid),
+                "codes_file": str(vdir / "ref_codes.txt"),
+                "emb_file": str(vdir / "speaker.emb.txt"),
+            }
+            VOICE_CATALOG[vid.lower()] = meta
+            VOICE_CATALOG[v.get("name", "").lower()] = meta
+            VOICE_LIST.append(meta)
+        print(f"✅ Đã tải danh mục {len(VOICE_LIST)} voice presets (Mặc định: {DEFAULT_VOICE}) từ {VOICES_DIR}")
+    except Exception as e:
+        print(f"⚠️ Lỗi khi tải voice catalog từ {manifest_path}: {e}")
+
+load_voice_catalog()
+
+def resolve_voice_meta(voice_input: Optional[str]) -> dict:
+    if not voice_input:
+        return VOICE_CATALOG.get(DEFAULT_VOICE.lower()) or (VOICE_LIST[0] if VOICE_LIST else {})
+    v_clean = voice_input.strip().lower()
+    if v_clean in OPENAI_VOICE_ALIASES:
+        v_clean = OPENAI_VOICE_ALIASES[v_clean]
+    if v_clean in VOICE_CATALOG:
+        return VOICE_CATALOG[v_clean]
+    # Thử match tiền tố hoặc tên không dấu đơn giản
+    for key, meta in VOICE_CATALOG.items():
+        if key == v_clean or key.replace("_", " ") == v_clean.replace("_", " "):
+            return meta
+    return VOICE_CATALOG.get(DEFAULT_VOICE.lower()) or (VOICE_LIST[0] if VOICE_LIST else {})
 
 AVAILABLE_MODELS = [
     {"id": "vieneu-v3-turbo", "object": "model", "created": 1740000000, "owned_by": "pnnbao-ump"},
@@ -121,6 +177,10 @@ class SpeechRequest(BaseModel):
     repetition_penalty: Optional[float] = None
 
 
+class PhonemizeRequest(BaseModel):
+    input: str
+
+
 def transcode_audio(wav_data: bytes, fmt: str, sample_rate: int = 24000, channels: int = 1) -> tuple[bytes, str]:
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", "pipe:0"]
     if sample_rate:
@@ -194,18 +254,31 @@ def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Securit
 v1_router = APIRouter(prefix="/v1", dependencies=[Depends(verify_api_key)])
 
 
-@app.get("/")
+@app.get("/ui", response_class=HTMLResponse)
+def ui_page():
+    return HTMLResponse(content=get_webui_html(api_key_enabled=bool(EXPECTED_API_KEY), default_voice=DEFAULT_VOICE))
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "engine": "audio.cpp C++ Runtime (GGUF)",
-        "model": "phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF",
+        "model": "pnnbao-ump/VieNeu-TTS-v3-Turbo-GGUF",
         "default_voice": DEFAULT_VOICE,
+        "total_voices": len(VOICE_LIST),
         "auth_enabled": bool(EXPECTED_API_KEY),
         "backend_url": BACKEND_URL,
-        "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/audio/speech"],
+        "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/audio/speech", "/v1/audio/phonemize"],
     }
+
+
+@app.get("/")
+def root(request: Request):
+    accept = request.headers.get("accept", "").lower()
+    if "text/html" in accept:
+        return HTMLResponse(content=get_webui_html(api_key_enabled=bool(EXPECTED_API_KEY), default_voice=DEFAULT_VOICE))
+    return health()
 
 
 @v1_router.get("/models")
@@ -216,16 +289,27 @@ def list_models():
 @v1_router.get("/audio/voices")
 @v1_router.get("/voices")
 def list_voices():
-    voice_meta = {
-        "id": DEFAULT_VOICE,
-        "name": DEFAULT_VOICE,
-        "description": "Nữ · Bắc · Giọng đọc tự nhiên (Chuẩn preset VieNeu-TTS)",
-        "language": "vi-VN",
-    }
     return {
         "object": "list",
-        "voices": [voice_meta],
-        "data": [{**voice_meta, "object": "voice"}],
+        "default": DEFAULT_VOICE,
+        "total": len(VOICE_LIST),
+        "voices": VOICE_LIST,
+        "data": [{**v, "object": "voice"} for v in VOICE_LIST],
+    }
+
+
+@v1_router.api_route("/audio/phonemize", methods=["GET", "POST"])
+def phonemize_endpoint(req: Optional[PhonemizeRequest] = None, text: Optional[str] = None):
+    input_text = ""
+    if req and req.input:
+        input_text = req.input.strip()
+    elif text:
+        input_text = text.strip()
+    if not input_text:
+        raise HTTPException(status_code=400, detail="Text input cannot be empty.")
+    return {
+        "input": input_text,
+        "phonemes": phonemize_vietnamese(input_text),
     }
 
 
@@ -235,16 +319,22 @@ async def create_speech(req: SpeechRequest, request: Request):
     if not text:
         raise HTTPException(status_code=400, detail="Text input cannot be empty.")
 
-    voice_req = (req.voice or DEFAULT_VOICE).strip()
-    _ = OPENAI_VOICE_ALIASES.get(voice_req.lower(), voice_req)
+    # 1. Tìm kiếm và ánh xạ voice preset
+    voice_meta = resolve_voice_meta(req.voice)
 
-    # Chuyển đổi text tiếng Việt tự nhiên sang chuỗi âm vị IPA
+    # 2. Chuyển đổi text tiếng Việt tự nhiên sang chuỗi âm vị IPA
     ipa_text = phonemize_vietnamese(text)
 
     backend_payload = {
         "model": "vieneu-v3-turbo",
         "input": ipa_text,
     }
+
+    if voice_meta and "codes_file" in voice_meta and "emb_file" in voice_meta:
+        backend_payload["options"] = {
+            "reference_codes_file": voice_meta["codes_file"],
+            "speaker_embedding_file": voice_meta["emb_file"],
+        }
 
     if req.speed and abs(req.speed - 1.0) > 1e-3:
         backend_payload["speed"] = req.speed

@@ -36,9 +36,8 @@ cat <<EOF > /app/server.json
       "task": "tts",
       "mode": "offline",
       "default_request_options": {
-        "reference_codes_file": "/app/voices/ngoc_huyen.ref_codes.txt",
-        "speaker_embedding_file": "/app/voices/ngoc_huyen.wav.emb.txt",
-        "reference_text": "tʃˈɔŋ fˈɔ2ŋ ɹˈəɜt̪ t̪ˈu2 mˈu2, nˌen kˈɔɜ tˈe4 zˈe5 zˈaː2ŋ tʃˈɛ zˈəɜw nˈɔɜ."
+        "reference_codes_file": "/app/voices/minh_quan_pro/ref_codes.txt",
+        "speaker_embedding_file": "/app/voices/minh_quan_pro/speaker.emb.txt"
       }
     }
   ]

@@ -1,13 +1,13 @@
-# VieNeu-TTS v3 Turbo GGUF on Modal (audio.cpp C++ Engine)
+# VieNeu-TTS v3 Turbo GGUF on Modal & Docker (audio.cpp C++ Engine)
 
-Triển khai **VieNeu-TTS v3 Turbo GGUF** — mô hình Text-to-Speech (TTS) tiếng Việt chất lượng cao chạy trên C++ runtime **audio.cpp** — lên [Modal](https://modal.com) thành một **Serverless API tương thích chuẩn OpenAI Audio Speech**, với preset mặc định giọng đọc **Ngọc Huyền**.
+Triển khai **VieNeu-TTS v3 Turbo GGUF** — mô hình Text-to-Speech (TTS) tiếng Việt chất lượng cao chạy trên C++ runtime **audio.cpp** — thành một **Serverless / Standalone Container API tương thích chuẩn OpenAI Audio Speech**, với **25 preset giọng đọc chính thức** (mặc định: **Minh Quân Pro**, cùng Ngọc Huyền, Mai Anh, Thùy Dung, Quang Sơn, v.v.).
 
-Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**, container tự động bật khi có request và scale về 0 khi không dùng. Với trọng số GGUF siêu nhẹ (163 MB) và engine C++ thuần, container khởi động và nạp model gần như tức thì (<0.01s), tốc độ sinh cực nhanh (RTF ~0.24 trên CPU, nhanh gấp 4.1x thời gian thực).
+Hệ thống sử dụng **trọng số GGUF chính thức từ tác giả Phạm Nguyễn Ngọc Bảo (188 MB)** với MOSS Neural Codec giữ nguyên định dạng `f16` đạt 36.0 dB SNR (+4 dB SNR so với các bản nén thông thường, triệt tiêu hoàn toàn rè tiếng), nạp model tức thì (<0.01s) và tốc độ sinh cực nhanh (RTF ~0.73 - 0.82 trên 4 vCPU, nhanh gấp 1.2x - 1.35x thời gian thực).
 
-> 💡 **Ước tính chi phí với cấu hình mặc định (2 CPU + 2 GiB RAM, Base Price 1.0×):**
+> 💡 **Ước tính chi phí với cấu hình mặc định (2 CPU + 2 GiB RAM, Base Price 1.0× trên Modal):**
 > - Đơn giá: CPU `$0.0000131/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000306/giây`** (~`$0.110/giờ`).
-> - Với RTF ~0.24, mỗi câu nói 3.5 giây chỉ mất **~0.85 giây compute**!
-> - **$30 credit/tháng** đủ cho **~1.150.000 câu đọc** (tối ưu gấp đôi so với ONNX CPU thông thường).
+> - Với RTF ~0.73 - 0.82, mỗi câu nói 3.5 giây chỉ mất **~2.5 - 2.8 giây compute**!
+> - **$30 credit/tháng** đủ cho **~350.000 câu đọc** (hoàn toàn không cần GPU đắt đỏ).
 
 ---
 
@@ -26,11 +26,12 @@ Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**,
   - [Build Docker Image cục bộ](#build-docker-image-cục-bộ)
   - [Cấu hình trên VPS OCI Ampere A1 (ARM64)](#cấu-hình-trên-vps-oci-ampere-a1-arm64)
   - [Tự động hóa Multi-Arch Build bằng GitHub Actions](#tự-động-hóa-multi-arch-build-bằng-github-actions)
-- [Tùy chọn: Tự động hóa CI/CD bằng GitHub Actions (Fork)](#tùy-chọn-tự-động-hóa-cicd-bằng-github-actions-fork)
-- [Hướng dẫn sử dụng API](#hướng-dẫn-sử-dụng-api)
+- [Hướng dẫn sử dụng](#hướng-dẫn-sử-dụng)
+  - [Trải nghiệm qua WebUI nhúng sẵn (Trình duyệt)](#trải-nghiệm-qua-webui-nhúng-sẵn-trình-duyệt)
   - [Xác định Base URL của bạn](#xác-định-base-url-của-bạn)
   - [Health check](#health-check)
-  - [Lấy danh sách giọng đọc](#lấy-danh-sách-giọng-đọc)
+  - [Xem trước âm vị IPA (`/v1/audio/phonemize`)](#xem-trước-âm-vị-ipa-v1audiophonemize)
+  - [Danh mục 25 giọng đọc (`/v1/audio/voices`)](#danh-mục-25-giọng-đọc-v1audiovoices)
   - [Tạo file âm thanh (WAV / MP3)](#tạo-file-âm-thanh-wav--mp3)
   - [Streaming âm thanh](#streaming-âm-thanh)
   - [Tích hợp với SDK OpenAI (Python & TypeScript)](#tích-hợp-với-sdk-openai)
@@ -46,13 +47,14 @@ Tận dụng gói **Starter miễn phí của Modal ($30 credit mỗi tháng)**,
 ## Tính năng nổi bật
 
 - ⚡ **audio.cpp C++ Engine**: Chạy mô hình VieNeu-TTS v3 Turbo hoàn toàn bằng C++ thuần (dựa trên `ggml`), nạp model bằng `mmap` tức thì (<0.01s), không phụ thuộc PyTorch lúc inference.
-- 📦 **GGUF Quantization (163 MB)**: Nén gọn Qwen3 talker backbone và codec MOSS-Audio-Tokenizer-Nano vào một file GGUF 163 MB duy nhất (`phuocnguyen90/VieNeu-TTS-v3-Turbo-GGUF`).
-- 🎙️ **Preset Giọng Ngọc Huyền**: Mặc định chất giọng chuẩn nữ miền Bắc, đọc diễn cảm tự nhiên với speaker embedding 192 chiều chuẩn xác.
-- 🔄 **Tự động G2P (Phonemizer)**: Tích hợp proxy siêu nhẹ chuyển đổi văn bản tiếng Việt tự nhiên sang chuỗi âm vị IPA trong ~1ms mà không đòi hỏi client phải tự xử lý.
+- 📦 **Trọng số GGUF Chính Thức (188 MB)**: Tải từ `pnnbao-ump/VieNeu-TTS-v3-Turbo` với Q8_0 talker backbone và Codec MOSS `f16` chất lượng cao (+4 dB SNR so với các bản nén thông thường).
+- 🎙️ **25 Preset Giọng Đọc Đa Dạng**: Hỗ trợ đầy đủ 25 preset giọng chính thức qua 3 miền Bắc - Trung - Nam, mặc định là **Minh Quân Pro** (`minh_quan_pro`). Đổi giọng tức thì theo từng request mà không cần nạp lại model.
+- 🖥️ **WebUI Nhúng Sẵn**: Giao diện người dùng trực quan, chọn 25 giọng theo vùng miền, nghe thử trực tiếp trong trình duyệt tại `/` hoặc `/ui`.
+- 🔄 **Tự động G2P (Phonemizer)**: Tích hợp proxy chuyển đổi văn bản tiếng Việt tự nhiên sang chuỗi âm vị IPA trong ~1-2ms qua `sea-g2p`.
 - 🔌 **Chuẩn OpenAI Compatible**: Hỗ trợ route `/v1/audio/speech`, `/v1/models`, `/v1/audio/voices` — tương thích trực tiếp với OpenAI SDK, Dify, NextChat, Open WebUI.
-- 🌊 **Streaming Audio**: Hỗ trợ truyền stream chunked WAV trực tiếp để phát âm thanh ngay lập tức.
-- 🗣️ **Hỗ trợ định dạng**: Mặc định `wav` (chất lượng 48 kHz cao cấp) hoặc `mp3` (tự động chuyển đổi bằng `ffmpeg`).
-- 🔐 **Bảo mật**: Xác thực Bearer Token qua Modal Secret (`API_KEY`).
+- 🌊 **Streaming Audio**: Hỗ trợ truyền stream chunked WAV hoặc SSE theo chuẩn OpenAI.
+- 🗣️ **Hỗ trợ đa định dạng**: Mặc định `wav` (chất lượng 48 kHz cao cấp) hoặc `mp3`, `opus`, `aac`, `flac` (chuyển đổi qua `ffmpeg`).
+- 🔐 **Bảo mật**: Xác thực Bearer Token (`API_KEY`).
 - 💰 **Chi phí tối ưu**: Chạy mượt mà trên 2 vCPU + 2 GiB RAM, không cần GPU đắt đỏ.
 
 
@@ -248,7 +250,21 @@ Nếu bạn muốn chỉnh sửa code và tự động deploy mỗi khi push lê
 
 ---
 
-## Hướng dẫn sử dụng API
+## Hướng dẫn sử dụng
+
+### Trải nghiệm qua WebUI nhúng sẵn (Trình duyệt)
+
+Hệ thống đã tích hợp sẵn một **WebUI hiện đại, siêu nhẹ** (không cần cài thêm Gradio hay Streamlit):
+
+- 🌐 Mở trình duyệt và truy cập:
+  - Khi chạy Docker: `http://localhost:8000/` (hoặc `http://<ip-vps>:8000/ui`)
+  - Khi chạy Modal: `https://<your-workspace>--vieneu-tts-v3-turbo-web-app.modal.run/`
+- ✨ **Tính năng nổi bật:**
+  - 📝 **Nhập văn bản tiếng Việt**: Có kèm các nút câu mẫu (chào hỏi, thời tiết, cảm xúc `[cười]`, `[thở dài]`).
+  - 🎚️ **Tùy chỉnh tốc độ & định dạng**: Điều chỉnh thanh trượt tốc độ (0.5x - 2.0x) và chọn xuất âm thanh (`WAV`, `MP3`, `Opus`, `AAC`, `FLAC`).
+  - 🔊 **Trình phát Audio HTML5**: Tự động phát âm thanh ngay khi sinh xong kèm nút tải file về máy.
+  - 🔤 **Xem trước âm vị IPA**: Hiển thị chính xác chuỗi âm vị IPA sau khi được chuẩn hóa qua `sea-g2p`.
+  - 🔑 **Lưu trữ API Key**: Tự động lưu Bearer Token trong trình duyệt (localStorage) nếu server của bạn có bật bảo mật.
 
 ### Xác định Base URL của bạn
 
@@ -286,16 +302,62 @@ Kết quả trả về:
 }
 ```
 
-### Lấy danh sách giọng đọc
+### Xem trước âm vị IPA (`/v1/audio/phonemize`)
+
+Xem chuỗi âm vị IPA mà mô hình VieNeu-TTS nhận vào sau khi chuẩn hóa tiếng Việt:
+
+```bash
+curl "$BASE_URL/v1/audio/phonemize" \
+  -H "Content-Type: application/json" \
+  -d '{"input": "Hôm nay tôi rất vui [cười]"}'
+```
+
+Kết quả:
+```json
+{
+  "input": "Hôm nay tôi rất vui [cười]",
+  "phonemes": "hˈom nˈaj t̪ˈoj ɹˈəɜt̪ vˈuj <|emotion_1|>."
+}
+```
+
+### Danh mục 25 giọng đọc (`/v1/audio/voices`)
+
+API cung cấp đầy đủ 25 preset giọng đọc chính thức từ tác giả VieNeu-TTS v3 Turbo:
 
 ```bash
 curl "$BASE_URL/v1/audio/voices" \
   -H "Authorization: Bearer $API_KEY"
 ```
 
+Kết quả mẫu:
+```json
+{
+  "object": "list",
+  "default": "minh_quan_pro",
+  "total": 25,
+  "voices": [
+    {"id": "minh_quan_pro", "name": "Minh Quân Pro", "label": "⭐ Minh Quân Pro — Nam · Bắc · Phong cách tự nhiên"},
+    {"id": "ngoc_huyen", "name": "Ngọc Huyền", "label": "⭐ Ngọc Huyền — Nữ · Bắc · Giọng đọc tự nhiên"},
+    {"id": "mai_anh", "name": "Mai Anh", "label": "⭐ Mai Anh — Nữ · Bắc · Phong cách tin tức"},
+    {"id": "thuy_dung", "name": "Thùy Dung", "label": "⭐ Thùy Dung — Nữ · Nam · Phong cách tin tức"},
+    {"id": "quang_son", "name": "Quang Sơn", "label": "⭐ Quang Sơn — Nam · Trung · Phong cách tự nhiên"}
+  ]
+}
+```
+
+#### Bảng danh sách 25 giọng đọc chính thức:
+
+| Vùng miền | Giọng nam | Giọng nữ |
+| :--- | :--- | :--- |
+| **Miền Bắc** | **`minh_quan_pro`** *(Mặc định)*, `anh_khoi`, `adam_bua`, `thien_tam_duc`, `minh_duc`, `pham_tuyen`, `xuan_vinh`, `thanh_binh`, `manh_dung` | `ngoc_huyen`, `mai_anh`, `truc_ly`, `ngoc_linh`, `doan_trang`, `quynh_anh` |
+| **Miền Trung** | `quang_son` | `ngoc_tran` |
+| **Miền Nam** | `thai_son`, `minh_triet`, `duc_tri`, `adam` | `thuy_dung`, `thuc_doan`, `my_duyen`, `kim_thanh` |
+
+> 💡 **Tương thích OpenAI**: Các tên giọng chuẩn của OpenAI (`alloy`, `echo`, `fable`, `onyx`, `nova`, `shimmer`, `ash`, `coral`, `sage`, `verse`) đều được tự động ánh xạ thông minh sang các preset tiếng Việt tương ứng.
+
 ### Tạo file âm thanh (WAV / MP3)
 
-**Xuất file WAV (mặc định):**
+**Xuất file WAV chuẩn giọng Minh Quân Pro (mặc định):**
 
 ```bash
 curl "$BASE_URL/v1/audio/speech" \
@@ -303,8 +365,8 @@ curl "$BASE_URL/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "vieneu-v3-turbo",
-    "input": "Xin chào, đây là giọng đọc tiếng Việt chạy trên hạ tầng serverless của Modal.",
-    "voice": "Minh Quân",
+    "input": "Xin chào, đây là giọng đọc tiếng Việt chạy trên hạ tầng C++ siêu tốc độ.",
+    "voice": "minh_quan_pro",
     "response_format": "wav"
   }' \
   --output chao.wav
