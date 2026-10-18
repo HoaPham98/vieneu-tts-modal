@@ -175,6 +175,7 @@ class SpeechRequest(BaseModel):
     top_k: Optional[int] = None
     top_p: Optional[float] = None
     repetition_penalty: Optional[float] = None
+    options: Optional[dict] = None
 
 
 class PhonemizeRequest(BaseModel):
@@ -325,16 +326,26 @@ async def create_speech(req: SpeechRequest, request: Request):
     # 2. Chuyển đổi text tiếng Việt tự nhiên sang chuỗi âm vị IPA
     ipa_text = phonemize_vietnamese(text)
 
+    chunk_size = 512
+    if req.max_chars and req.max_chars > 0:
+        chunk_size = req.max_chars
+    if req.options and "text_chunk_size" in req.options:
+        try:
+            chunk_size = int(req.options["text_chunk_size"])
+        except Exception:
+            pass
+
     backend_payload = {
         "model": "vieneu-v3-turbo",
         "input": ipa_text,
+        "options": {
+            "text_chunk_size": chunk_size,
+        },
     }
 
     if voice_meta and "codes_file" in voice_meta and "emb_file" in voice_meta:
-        backend_payload["options"] = {
-            "reference_codes_file": voice_meta["codes_file"],
-            "speaker_embedding_file": voice_meta["emb_file"],
-        }
+        backend_payload["options"]["reference_codes_file"] = voice_meta["codes_file"]
+        backend_payload["options"]["speaker_embedding_file"] = voice_meta["emb_file"]
 
     if req.speed and abs(req.speed - 1.0) > 1e-3:
         backend_payload["speed"] = req.speed

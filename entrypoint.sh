@@ -37,7 +37,8 @@ cat <<EOF > /app/server.json
       "mode": "offline",
       "default_request_options": {
         "reference_codes_file": "/app/voices/minh_quan_pro/ref_codes.txt",
-        "speaker_embedding_file": "/app/voices/minh_quan_pro/speaker.emb.txt"
+        "speaker_embedding_file": "/app/voices/minh_quan_pro/speaker.emb.txt",
+        "text_chunk_size": 512
       }
     }
   ]
