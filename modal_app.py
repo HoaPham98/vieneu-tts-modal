@@ -143,10 +143,10 @@ def phonemize_vietnamese(text: str) -> str:
 # =====================================================================
 
 @app.cls(
-    cpu=2.0,
+    cpu=1.0,
     memory=4096,
     scaledown_window=60,
-    secrets=[modal.Secret.from_name("vieneu-api-key")],
+    secrets=[],
 )
 class AudioCppService:
     proc: Optional[subprocess.Popen] = None
@@ -198,13 +198,12 @@ class AudioCppService:
                 time.sleep(0.5)
             print("⚠️ Cảnh báo: audiocpp_server chưa phản hồi healthcheck kịp thời, tiếp tục tiến trình...")
 
-    @modal.asgi_app()
+    @modal.asgi_app(requires_proxy_auth=True)
     def web_app(self):
         import base64
-        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Security, status
+        from fastapi import APIRouter, FastAPI, HTTPException, Request, status
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import HTMLResponse, Response, StreamingResponse
-        from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
         import httpx
         from pydantic import BaseModel
 
@@ -220,31 +219,7 @@ class AudioCppService:
             allow_headers=["*"],
         )
 
-        security = HTTPBearer(auto_error=False)
-        EXPECTED_API_KEY = os.environ.get("API_KEY", "").strip()
-
-        def verify_api_key(credentials: Optional[HTTPAuthorizationCredentials] = Security(security)):
-            if not EXPECTED_API_KEY:
-                return
-            if (
-                credentials is None
-                or credentials.scheme.lower() != "bearer"
-                or not secrets.compare_digest(credentials.credentials, EXPECTED_API_KEY)
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail={
-                        "error": {
-                            "message": "Incorrect API key provided. Pass 'Authorization: Bearer <API_KEY>'.",
-                            "type": "invalid_request_error",
-                            "param": None,
-                            "code": "invalid_api_key",
-                        }
-                    },
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
-
-        v1_router = APIRouter(prefix="/v1", dependencies=[Depends(verify_api_key)])
+        v1_router = APIRouter(prefix="/v1")
 
         VOICES_DIR = Path("/app/voices")
         if not VOICES_DIR.exists() or not (VOICES_DIR / "manifest.json").exists():
@@ -365,7 +340,7 @@ class AudioCppService:
 
         @web.get("/ui", response_class=HTMLResponse)
         def ui_page():
-            return HTMLResponse(content=get_webui_html(api_key_enabled=bool(EXPECTED_API_KEY), default_voice=DEFAULT_VOICE))
+            return HTMLResponse(content=get_webui_html(api_key_enabled=False, default_voice=DEFAULT_VOICE))
 
         @web.get("/health")
         def health():
@@ -375,7 +350,8 @@ class AudioCppService:
                 "model": "pnnbao-ump/VieNeu-TTS-v3-Turbo-GGUF",
                 "default_voice": DEFAULT_VOICE,
                 "total_voices": len(VOICE_LIST),
-                "auth_enabled": bool(EXPECTED_API_KEY),
+                "auth_enabled": True,
+                "auth_provider": "Modal Proxy Auth",
                 "endpoints": ["/v1/models", "/v1/audio/voices", "/v1/audio/speech", "/v1/audio/phonemize"],
             }
 
@@ -383,7 +359,7 @@ class AudioCppService:
         def root(request: Request):
             accept = request.headers.get("accept", "").lower()
             if "text/html" in accept:
-                return HTMLResponse(content=get_webui_html(api_key_enabled=bool(EXPECTED_API_KEY), default_voice=DEFAULT_VOICE))
+                return HTMLResponse(content=get_webui_html(api_key_enabled=False, default_voice=DEFAULT_VOICE))
             return health()
 
         @v1_router.get("/models")
