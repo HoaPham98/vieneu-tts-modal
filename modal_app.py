@@ -1,8 +1,6 @@
 import functools
 import json
-import os
 import re
-import secrets
 import subprocess
 import time
 import urllib.request
@@ -201,7 +199,7 @@ class AudioCppService:
     @modal.asgi_app(requires_proxy_auth=True)
     def web_app(self):
         import base64
-        from fastapi import APIRouter, FastAPI, HTTPException, Request, status
+        from fastapi import APIRouter, FastAPI, HTTPException, Request
         from fastapi.middleware.cors import CORSMiddleware
         from fastapi.responses import HTMLResponse, Response, StreamingResponse
         import httpx
