@@ -142,7 +142,7 @@ def phonemize_vietnamese(text: str) -> str:
 
 @app.cls(
     cpu=1.0,
-    memory=4096,
+    memory=2048,
     scaledown_window=60,
     secrets=[],
 )

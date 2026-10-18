@@ -4,8 +4,8 @@ Triển khai **VieNeu-TTS v3 Turbo GGUF** — mô hình Text-to-Speech (TTS) ti�
 
 Hệ thống sử dụng **trọng số GGUF chính thức từ tác giả Phạm Nguyễn Ngọc Bảo (188 MB)** với MOSS Neural Codec giữ nguyên định dạng `f16` đạt 36.0 dB SNR (âm thanh 48 kHz chuẩn studio, triệt tiêu hoàn toàn rè tiếng), nạp model tức thì (<0.01s) và tốc độ sinh cực nhanh (RTF ~0.51 trên 1 CPU x86 của Modal, nhanh gấp đôi thời gian thực).
 
-> 💡 **Ước tính chi phí với cấu hình tối ưu (1 CPU Physical Core + 4 GiB RAM trên Modal):**
-> - Đơn giá Modal CPU: CPU `$0.0000137/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000225/giây`** (~`$0.081/giờ`).
+> 💡 **Ước tính chi phí với cấu hình tối ưu (1 CPU Physical Core + 2 GiB RAM trên Modal):**
+> - Đơn giá Modal CPU: CPU `$0.0000137/core/giây`, RAM `$0.00000222/GiB/giây` ≈ **`$0.0000181/giây`** (~`$0.065/giờ`).
 > - Với RTF ~0.51, mỗi câu nói 4 giây chỉ mất **~2.0 giây compute**!
 > - **$30 credit/tháng** đủ cho **~500.000 câu đọc** (hoàn toàn không cần GPU đắt đỏ).
 > - **Bảo mật Modal Proxy Auth**: Request sai/thiếu token bị chặn ngay tại tầng Edge Reverse Proxy của Modal — container **hoàn toàn không bị đánh thức**, triệt tiêu 100% chi phí phát sinh do quét bot/spam.
@@ -412,7 +412,7 @@ Cấu hình hiện tại trong [modal_app.py](modal_app.py):
 ```python
 @app.cls(
     cpu=1.0,            # 1 Physical Core x86 (tương đương 2 SMT threads)
-    memory=4096,        # 4 GB RAM an toàn tuyệt đối
+    memory=2048,        # 2 GB RAM (dư dả cho mức tiêu thụ thực tế ~650 - 800 MB)
     scaledown_window=60,# Sau 60s không có request tự động tắt container về 0
     secrets=[],         # Bảo mật qua Modal Proxy Auth ở tầng Edge
 )
