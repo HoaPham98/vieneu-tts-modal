@@ -199,9 +199,9 @@ jobs:
           CMAKE_PROJECT_INCLUDE_BEFORE: ${{ github.workspace }}/packages/vieneu_tts/rust/ios_compat.cmake
 
   e2e-synthesis:
-    name: E2E Inference Verification
+    name: E2E Inference & Audio Verification
     needs: [codegen]
-    if: ${{ github.event.inputs.run_e2e_test == 'true' }}
+    if: ${{ github.event.inputs.run_e2e_test == 'true' || contains(github.event.head_commit.message, '[run-e2e]') }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -235,7 +235,23 @@ jobs:
           curl -sSfL -o /tmp/vieneu_test/model.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
           ls -lh /tmp/vieneu_test/model.gguf
 
-      - name: Run Flutter Unit and Integration Tests
+      - name: Run Flutter Unit Tests
         run: |
           flutter pub get
           flutter test
+
+      - name: Run E2E Audio Synthesis & Streaming Test
+        working-directory: packages/vieneu_tts/rust
+        env:
+          MODEL_PATH: /tmp/vieneu_test/model.gguf
+          OUTPUT_DIR: ../output_audio
+        run: |
+          cargo run --example test_synthesis --verbose
+          ls -lh ../output_audio/
+
+      - name: Upload Synthesized Audio Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthesized-audio
+          path: packages/vieneu_tts/output_audio/*.wav
+          retention-days: 7
