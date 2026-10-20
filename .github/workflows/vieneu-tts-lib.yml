@@ -26,8 +26,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  codegen:
+    name: Generate Bridge Bindings
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+          flutter_rust_bridge_codegen --version
+
+      - name: Generate Bindings
+        run: |
+          mkdir -p packages/vieneu_tts/lib/src/rust
+          cd packages/vieneu_tts
+          flutter_rust_bridge_codegen generate
+
+      - name: Upload Generated Bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: frb-bindings
+          path: |
+            packages/vieneu_tts/lib/src/rust/
+            packages/vieneu_tts/rust/src/frb_generated.*
+          retention-days: 1
+
   dart-lint:
     name: Dart Analysis & Lint
+    needs: [codegen]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,13 +74,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install flutter_rust_bridge_codegen
-        run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
-          flutter_rust_bridge_codegen --version
-
-      - name: Generate Bridge Bindings
-        run: flutter_rust_bridge_codegen generate
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
@@ -59,6 +93,7 @@ jobs:
 
   rust-check:
     name: Rust Bridge & audio-cpp Check
+    needs: [codegen]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,6 +102,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -78,14 +118,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build libasound2-dev
 
-      - name: Install flutter_rust_bridge_codegen
-        run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
-
-      - name: Generate Bridge Bindings
-        working-directory: packages/vieneu_tts
-        run: flutter_rust_bridge_codegen generate
-
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -96,6 +128,7 @@ jobs:
 
   build-android:
     name: Android NDK Build (arm64-v8a)
+    needs: [codegen]
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -104,6 +137,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -122,19 +160,12 @@ jobs:
       - name: Install CMake & Ninja
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
-      - name: Install flutter_rust_bridge_codegen
-        run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
-
-      - name: Generate Bridge Bindings
-        working-directory: packages/vieneu_tts
-        run: flutter_rust_bridge_codegen generate
-
       - name: Check Android arm64-v8a compilation
         run: cargo ndk -t arm64-v8a check --verbose
 
   build-ios:
     name: iOS Target Check (aarch64-apple-ios)
+    needs: [codegen]
     runs-on: macos-14
     defaults:
       run:
@@ -144,6 +175,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -152,14 +188,6 @@ jobs:
       - name: Install CMake and Ninja
         run: brew install cmake ninja
 
-      - name: Install flutter_rust_bridge_codegen
-        run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-aarch64-apple-darwin-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
-
-      - name: Generate Bridge Bindings
-        working-directory: packages/vieneu_tts
-        run: flutter_rust_bridge_codegen generate
-
       - name: Cargo check for iOS target
         run: cargo check --target aarch64-apple-ios --verbose
         env:
@@ -167,6 +195,7 @@ jobs:
 
   e2e-synthesis:
     name: E2E Inference Verification
+    needs: [codegen]
     if: ${{ github.event.inputs.run_e2e_test == 'true' }}
     runs-on: ubuntu-latest
     defaults:
@@ -177,12 +206,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install flutter_rust_bridge_codegen
-        run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
-
-      - name: Generate Bridge Bindings
-        run: flutter_rust_bridge_codegen generate
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
