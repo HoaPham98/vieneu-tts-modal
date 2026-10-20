@@ -88,7 +88,9 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        run: flutter pub get
+        run: |
+          flutter pub get
+          cd example && flutter pub get
 
       - name: Analyze code
         run: flutter analyze
@@ -164,8 +166,18 @@ jobs:
       - name: Install CMake & Ninja
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
-      - name: Check Android arm64-v8a compilation
-        run: cargo ndk -t arm64-v8a check --verbose
+      - name: Build Android arm64-v8a shared library
+        run: |
+          mkdir -p ../android/src/main/jniLibs
+          cargo ndk -t arm64-v8a -o ../android/src/main/jniLibs build --release --verbose
+          ls -lh ../android/src/main/jniLibs/arm64-v8a/
+
+      - name: Upload Android jniLibs
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-jnilibs
+          path: packages/vieneu_tts/android/src/main/jniLibs/
+          retention-days: 1
 
   build-ios:
     name: iOS Target Check (aarch64-apple-ios)
@@ -197,6 +209,78 @@ jobs:
         run: cargo check --target aarch64-apple-ios --verbose
         env:
           CMAKE_PROJECT_INCLUDE_BEFORE: ${{ github.workspace }}/packages/vieneu_tts/rust/ios_compat.cmake
+
+  build-example-apk:
+    name: Build Example App & Android APK
+    needs: [codegen, dart-lint, build-android]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts/example
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: packages/vieneu_tts
+
+      - name: Download Android jniLibs
+        uses: actions/download-artifact@v4
+        with:
+          name: android-jnilibs
+          path: packages/vieneu_tts/android/src/main/jniLibs
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install root dependencies
+        working-directory: packages/vieneu_tts
+        run: flutter pub get
+
+      - name: Install example dependencies
+        run: flutter pub get
+
+      - name: Run Example App Tests & Lint
+        run: |
+          flutter analyze
+          flutter test --verbose
+
+      - name: Build Android Release APK (arm64-v8a)
+        run: |
+          flutter build apk --release --target-platform android-arm64
+
+      - name: Verify APK Integrity & Embedded Native Libraries
+        run: |
+          APK_FILE="build/app/outputs/flutter-apk/app-release.apk"
+          if [ ! -f "$APK_FILE" ]; then
+            echo "ERROR: APK not found at $APK_FILE"
+            exit 1
+          fi
+          echo "=== APK File Info ==="
+          ls -lh "$APK_FILE"
+          echo "=== Inspecting Native Libraries inside APK ==="
+          unzip -l "$APK_FILE" | grep -E "lib/.*libvieneu_tts\.so"
+          echo "✓ Native libvieneu_tts.so is bundled inside the release APK!"
+
+      - name: Upload Android Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: vieneu-tts-android-apk
+          path: packages/vieneu_tts/example/build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
 
   e2e-synthesis:
     name: E2E Inference & Audio Verification
@@ -236,10 +320,11 @@ jobs:
           curl -sSfL -o /tmp/vieneu_test/sea_g2p.bin "https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin"
           ls -lh /tmp/vieneu_test/
 
-      - name: Run Flutter Unit Tests
+      - name: Run Flutter Unit & Integration Tests
         run: |
           flutter pub get
           flutter test
+          cd example && flutter pub get && flutter test
 
       - name: Run E2E Audio Synthesis & Streaming Test
         working-directory: packages/vieneu_tts/rust
