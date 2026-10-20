@@ -79,6 +79,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frb-bindings
+          path: packages/vieneu_tts
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
@@ -108,6 +109,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frb-bindings
+          path: packages/vieneu_tts
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -143,6 +145,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frb-bindings
+          path: packages/vieneu_tts
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -180,6 +183,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frb-bindings
+          path: packages/vieneu_tts
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -211,6 +215,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: frb-bindings
+          path: packages/vieneu_tts
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
