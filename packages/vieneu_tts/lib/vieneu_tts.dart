@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'src/rust/api/api.dart' as rust_api;
+import 'src/rust/api.dart' as rust_api;
 import 'src/rust/frb_generated.dart';
 
 /// Metadata for a Vietnamese voice preset.
@@ -113,7 +113,10 @@ class VieneuTts {
       throw FileSystemException('GGUF model file not found', modelPath);
     }
 
-    await rust_api.initEngine(modelPath: modelPath, threads: threads);
+    await rust_api.initEngine(
+      modelPath: modelPath,
+      threads: BigInt.from(threads),
+    );
     _initialized = true;
   }
 
