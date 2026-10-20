@@ -54,7 +54,7 @@ class _TtsHomePageState extends State<TtsHomePage> {
   String? _modelPath;
   String? _dictPath;
   String _selectedVoice = 'minh_quan_pro';
-  double _speechSpeed = 1.0;
+  final double _speechSpeed = 1.0;
 
   Uint8List? _lastAudioBytes;
   int _lastSynthesisMs = 0;
@@ -301,7 +301,7 @@ class _TtsHomePageState extends State<TtsHomePage> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Kiểm tra lại tài nguyên',
-            onPressed: _isDownloading || _isSynthesizing ? null : _checkResourceStatus,
+            onPressed: _isDownloading || _isInitializing || _isSynthesizing ? null : _checkResourceStatus,
           )
         ],
       ),
@@ -344,6 +344,15 @@ class _TtsHomePageState extends State<TtsHomePage> {
                       _statusMessage,
                       style: TextStyle(color: Colors.grey.shade800, fontSize: 13),
                     ),
+                    if (_isInitializing) ...[
+                      const SizedBox(height: 12),
+                      const LinearProgressIndicator(),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Đang nạp mô hình vào bộ nhớ thiết bị...',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                    ],
                     if (_isDownloading) ...[
                       const SizedBox(height: 12),
                       LinearProgressIndicator(value: _downloadProgress),
