@@ -51,6 +51,7 @@ jobs:
         run: |
           mkdir -p packages/vieneu_tts/lib/src/rust
           cd packages/vieneu_tts
+          flutter pub get
           flutter_rust_bridge_codegen generate
 
       - name: Upload Generated Bindings
