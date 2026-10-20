@@ -40,3 +40,10 @@ The library SHALL provide 25 embedded Vietnamese voice presets covering North, C
 #### Scenario: Switch voice preset
 - **WHEN** client specifies a voice identifier such as "minh_quan_pro" or "ngoc_huyen"
 - **THEN** inference uses the corresponding speaker embedding and reference acoustic codes without reloading the model weights
+
+### Requirement: Offline Example Application
+The repository SHALL provide a runnable Flutter example application (`packages/vieneu_tts/example/`) demonstrating the full lifecycle: downloading the GGUF model and SEA-G2P dictionary on-demand, caching them in device storage, and performing offline TTS synthesis and streaming with voice preset selection.
+
+#### Scenario: End-to-end offline TTS workflow in example app
+- **WHEN** user opens the example app, downloads model and dictionary assets once, and inputs Vietnamese text
+- **THEN** the app initializes the engine locally and synthesizes/plays speech without an active network connection

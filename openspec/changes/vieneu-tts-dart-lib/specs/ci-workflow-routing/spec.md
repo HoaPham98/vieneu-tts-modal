@@ -26,3 +26,10 @@ The CI workflow SHALL support manual invocation with configurable parameters and
 #### Scenario: Manual trigger via gh cli
 - **WHEN** a developer runs `gh workflow run vieneu-tts-lib.yml` with optional parameters
 - **THEN** GitHub Actions initiates the job and results/logs are retrievable via `gh run watch` and `gh run view`
+
+### Requirement: Android Example App APK Artifact
+The CI workflow SHALL compile the Flutter example application into an Android release APK and upload it as a workflow artifact (`vieneu-tts-android-apk`).
+
+#### Scenario: Release APK artifact generation
+- **WHEN** the CI workflow executes
+- **THEN** it builds the Flutter Android release APK with native libraries (`arm64-v8a`) and saves it under the artifact name `vieneu-tts-android-apk`

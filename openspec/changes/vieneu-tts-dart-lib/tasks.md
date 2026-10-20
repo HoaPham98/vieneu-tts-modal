@@ -24,7 +24,15 @@
 - [x] 4.2 Add automated E2E test job in CI that downloads `vieneu-v3-turbo-q8_0.gguf`, synthesizes sample Vietnamese audio, and verifies output WAV integrity
 - [x] 4.3 Trigger the CI workflow using GitHub CLI (`gh workflow run vieneu-tts-lib.yml`), monitor execution with `gh run watch`, and verify logs using `gh run view`
 
+## 5. Android Example Application & CI APK Artifact
+
+- [ ] 5.1 Scaffold Flutter example app (`packages/vieneu_tts/example/`) with `path_provider` and `audioplayers` dependencies
+- [ ] 5.2 Build example app UI for downloading model/dict, offline engine initialization, voice selection, and speech synthesis/playback
+- [ ] 5.3 Add `Build Android Release APK` job to `.github/workflows/vieneu-tts-lib.yml` to compile release APK and upload `vieneu-tts-android-apk` artifact
+- [ ] 5.4 Trigger CI workflow, monitor execution, and verify APK artifact download via `gh run download`
+
 ## Workflow follow-up
 
 - Verify all GitHub Actions pass with green status across all jobs.
 - Validate that pushing commits touching only `packages/vieneu_tts/` does NOT trigger `deploy-modal.yml` or `docker-build.yml`.
+- Verify the generated `app-release.apk` artifact can be downloaded and inspected.

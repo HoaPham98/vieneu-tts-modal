@@ -49,6 +49,12 @@ A strict project constraint is: **no Rust or Flutter toolchains are installed on
   - Add `workflow_dispatch` to `.github/workflows/vieneu-tts-lib.yml` with parameters for `target` (`android`, `ios`, `desktop`, `all`) and `run_e2e_test` (boolean to trigger model download and inference verification).
 - **Rationale**: Completely isolates CI runs and ensures no accidental deployments.
 
+### 5. Flutter Example App & CI APK Packaging
+- **Decision**: Provide a standalone Flutter example application in `packages/vieneu_tts/example/` and add an automated APK packaging job to CI.
+- **Rationale**:
+  - Users need a reference mobile app proving full on-device functionality: on-demand download of `model.gguf` (188 MB) and `sea_g2p.bin` (60 MB) into app sandbox (`path_provider`), offline engine initialization, voice preset selection (25 voices), text input, and audio playback (`audioplayers`).
+  - In `.github/workflows/vieneu-tts-lib.yml`, a dedicated `Build Android Release APK` job builds the Flutter APK with compiled Rust JNI libs (`arm64-v8a`) and publishes the `.apk` as an artifact (`vieneu-tts-android-apk`), allowing immediate installation and manual testing on real Android hardware without local compilation.
+
 ## Architecture & Data Flow
 
 ```
