@@ -23,3 +23,36 @@ Thumbs.db
 *.wav
 *.mp3
 scratch/
+
+# Flutter & Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+ephemeral/
+
+# Rust / Cargo
+**/target/
+**/*.rs.bk
+
+# Android
+**/.gradle/
+**/local.properties
+**/android/**/build/
+**/*.aar
+**/jniLibs/
+
+# iOS / CocoaPods
+**/Pods/
+**/.symlinks/
+**/Podfile.lock
+**/*.xcworkspace
+**/*.framework
+**/*.xcframework
+
+# Compiled native libraries
+*.so
+*.dylib
+*.dll
+*.a
