@@ -33,3 +33,10 @@ The CI workflow SHALL compile the Flutter example application into an Android re
 #### Scenario: Release APK artifact generation
 - **WHEN** the CI workflow executes
 - **THEN** it builds the Flutter Android release APK with native libraries (`arm64-v8a`) and saves it under the artifact name `vieneu-tts-android-apk`
+
+### Requirement: CI Automated App Integration Test
+The CI workflow SHALL run automated integration testing for the Flutter example application to verify that the app launches and executes offline speech synthesis cleanly before completing the build.
+
+#### Scenario: Integration test passes before APK release
+- **WHEN** the CI workflow runs the example app verification job
+- **THEN** the Flutter integration test suite runs and passes with zero errors before release APK packaging succeeds

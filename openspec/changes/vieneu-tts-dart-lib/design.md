@@ -55,6 +55,13 @@ A strict project constraint is: **no Rust or Flutter toolchains are installed on
   - Users need a reference mobile app proving full on-device functionality: on-demand download of `model.gguf` (188 MB) and `sea_g2p.bin` (60 MB) into app sandbox (`path_provider`), offline engine initialization, voice preset selection (25 voices), text input, and audio playback (`audioplayers`).
   - In `.github/workflows/vieneu-tts-lib.yml`, a dedicated `Build Android Release APK` job builds the Flutter APK with compiled Rust JNI libs (`arm64-v8a`) and publishes the `.apk` as an artifact (`vieneu-tts-android-apk`), allowing immediate installation and manual testing on real Android hardware without local compilation.
 
+### 6. Automated Integration Testing Strategy
+- **Decision**: Implement an end-to-end integration test (`packages/vieneu_tts/example/integration_test/app_test.dart`) using Flutter's `integration_test` framework and execute it as a required verification gate in GitHub Actions.
+- **Rationale**:
+  - Merely building an APK does not prove runtime correctness (e.g. dynamic library linking errors, missing JNI symbols, ABI mismatches, or audio decoding exceptions on device).
+  - The integration test mounts the example app, tests the download/cache lookup flow, verifies `VieneuTts.init(...)` with native `libvieneu_tts`, executes `VieneuTts.synthesize("Xin chào")`, and verifies that UI states transition cleanly to ready/playing without unhandled exceptions.
+  - In CI, the test runs on the Linux runner (or headless emulator environment) with compiled native libraries, guaranteeing the app operates before the user is notified.
+
 ## Architecture & Data Flow
 
 ```

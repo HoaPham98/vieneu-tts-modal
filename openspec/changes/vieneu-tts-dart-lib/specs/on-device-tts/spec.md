@@ -47,3 +47,10 @@ The repository SHALL provide a runnable Flutter example application (`packages/v
 #### Scenario: End-to-end offline TTS workflow in example app
 - **WHEN** user opens the example app, downloads model and dictionary assets once, and inputs Vietnamese text
 - **THEN** the app initializes the engine locally and synthesizes/plays speech without an active network connection
+
+### Requirement: Example App Integration Testing
+The example application SHALL include an automated integration test suite (`integration_test/app_test.dart`) verifying the complete application workflow: app startup, local asset verification/download, native engine initialization via FFI, speech synthesis execution, and valid audio production without runtime exceptions or UI crashes.
+
+#### Scenario: Automated integration test execution
+- **WHEN** the integration test suite is executed in a headless/CI environment
+- **THEN** the app boots up, initializes the native engine, executes synthesis, and passes all widget and state assertions

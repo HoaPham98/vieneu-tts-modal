@@ -28,11 +28,13 @@
 
 - [ ] 5.1 Scaffold Flutter example app (`packages/vieneu_tts/example/`) with `path_provider` and `audioplayers` dependencies
 - [ ] 5.2 Build example app UI for downloading model/dict, offline engine initialization, voice selection, and speech synthesis/playback
-- [ ] 5.3 Add `Build Android Release APK` job to `.github/workflows/vieneu-tts-lib.yml` to compile release APK and upload `vieneu-tts-android-apk` artifact
-- [ ] 5.4 Trigger CI workflow, monitor execution, and verify APK artifact download via `gh run download`
+- [ ] 5.3 Write Flutter integration test (`packages/vieneu_tts/example/integration_test/app_test.dart`) covering end-to-end app launch, asset download, offline engine init, and synthesis
+- [ ] 5.4 Configure CI job in `.github/workflows/vieneu-tts-lib.yml` to run automated integration test and compile release APK with embedded native libs
+- [ ] 5.5 Trigger CI workflow, monitor execution, verify integration tests pass green, and inspect APK artifact via `gh run download`
 
 ## Workflow follow-up
 
 - Verify all GitHub Actions pass with green status across all jobs.
 - Validate that pushing commits touching only `packages/vieneu_tts/` does NOT trigger `deploy-modal.yml` or `docker-build.yml`.
 - Verify the generated `app-release.apk` artifact can be downloaded and inspected.
+- Ensure integration test passes and proves app functionality before reporting completion.
