@@ -130,6 +130,8 @@ jobs:
 
       - name: Cargo check for iOS target
         run: cargo check --target aarch64-apple-ios --verbose
+        env:
+          CMAKE_PROJECT_INCLUDE_BEFORE: ${{ github.workspace }}/packages/vieneu_tts/rust/ios_compat.cmake
 
   e2e-synthesis:
     name: E2E Inference Verification
