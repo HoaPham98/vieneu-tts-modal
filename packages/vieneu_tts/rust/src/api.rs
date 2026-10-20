@@ -110,19 +110,22 @@ pub fn synthesize_speech(text: String, voice: String, speed: f32) -> Result<Vec<
 
     let result = session.run_offline(req).context("TTS inference failed")?;
     let audio = result
-        .audio
+        .audio_output
         .ok_or_else(|| anyhow!("Model produced no audio output"))?;
 
-    let sample_rate = audio.sample_rate.unwrap_or(48000) as u32;
-    let channels = audio.channels.unwrap_or(2) as u16;
+    let sample_rate = audio.sample_rate as u32;
+    let channels = audio.channels as u16;
+    let samples = audio
+        .samples
+        .ok_or_else(|| anyhow!("Model audio buffer contained no samples"))?;
 
-    samples_to_wav(&audio.samples, sample_rate, channels)
+    samples_to_wav(&samples, sample_rate, channels)
 }
 
 /// Streams speech chunks in real-time as they are synthesized.
 #[frb]
 pub fn stream_speech(
-    sink: flutter_rust_bridge::StreamSink<Vec<u8>>,
+    sink: crate::frb_generated::StreamSink<Vec<u8>>,
     text: String,
     voice: String,
     speed: f32,

@@ -11,8 +11,8 @@ macro_rules! voice {
     ($id:ident, $path:expr) => {
         VoiceData {
             id: stringify!($id),
-            ref_codes: include_str!(concat!("../../../preset_voices/", $path, "/ref_codes.txt")),
-            speaker_emb: include_str!(concat!("../../../preset_voices/", $path, "/speaker.emb.txt")),
+            ref_codes: include_str!(concat!("../../../../preset_voices/", $path, "/ref_codes.txt")),
+            speaker_emb: include_str!(concat!("../../../../preset_voices/", $path, "/speaker.emb.txt")),
         }
     };
 }
