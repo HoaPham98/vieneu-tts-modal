@@ -56,3 +56,7 @@ ephemeral/
 *.dylib
 *.dll
 *.a
+
+# Flutter Rust Bridge generated files
+**/lib/src/rust/
+**/rust/src/frb_generated.*

@@ -37,6 +37,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+          flutter_rust_bridge_codegen --version
+
+      - name: Generate Bridge Bindings
+        run: flutter_rust_bridge_codegen generate
+
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
@@ -69,6 +77,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends cmake ninja-build libasound2-dev
+
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+
+      - name: Generate Bridge Bindings
+        working-directory: packages/vieneu_tts
+        run: flutter_rust_bridge_codegen generate
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
@@ -106,6 +122,14 @@ jobs:
       - name: Install CMake & Ninja
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+
+      - name: Generate Bridge Bindings
+        working-directory: packages/vieneu_tts
+        run: flutter_rust_bridge_codegen generate
+
       - name: Check Android arm64-v8a compilation
         run: cargo ndk -t arm64-v8a check --verbose
 
@@ -128,6 +152,14 @@ jobs:
       - name: Install CMake and Ninja
         run: brew install cmake ninja
 
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-aarch64-apple-darwin-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+
+      - name: Generate Bridge Bindings
+        working-directory: packages/vieneu_tts
+        run: flutter_rust_bridge_codegen generate
+
       - name: Cargo check for iOS target
         run: cargo check --target aarch64-apple-ios --verbose
         env:
@@ -144,6 +176,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+
+      - name: Generate Bridge Bindings
+        run: flutter_rust_bridge_codegen generate
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
