@@ -1,0 +1,165 @@
+name: VieNeu-TTS Dart & Native CI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "packages/vieneu_tts/**"
+      - ".github/workflows/vieneu-tts-lib.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "packages/vieneu_tts/**"
+      - ".github/workflows/vieneu-tts-lib.yml"
+  workflow_dispatch:
+    inputs:
+      run_e2e_test:
+        description: "Download 188MB GGUF model and run full synthesis test"
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: vieneu-tts-lib-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dart-lint:
+    name: Dart Analysis & Lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Analyze code
+        run: dart analyze --fatal-infos
+
+  rust-check:
+    name: Rust Bridge & audio-cpp Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts/rust
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install build tools (CMake, Ninja)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libasound2-dev
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/vieneu_tts/rust
+
+      - name: Cargo Check
+        run: cargo check --verbose
+
+  build-android:
+    name: Android NDK Build (arm64-v8a)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts/rust
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          add-to-path: true
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked || true
+
+      - name: Install CMake & Ninja
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Check Android arm64-v8a compilation
+        run: cargo ndk -t arm64-v8a check --verbose
+
+  build-ios:
+    name: iOS Target Check (aarch64-apple-ios)
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts/rust
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+
+      - name: Install CMake and Ninja
+        run: brew install cmake ninja
+
+      - name: Cargo check for iOS target
+        run: cargo check --target aarch64-apple-ios --verbose
+
+  e2e-synthesis:
+    name: E2E Inference Verification
+    if: ${{ github.event.inputs.run_e2e_test == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CMake, Ninja & Audio libraries
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libasound2-dev curl
+
+      - name: Download official GGUF Model weights
+        run: |
+          mkdir -p /tmp/vieneu_test
+          curl -sSfL -o /tmp/vieneu_test/model.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
+          ls -lh /tmp/vieneu_test/model.gguf
+
+      - name: Run Dart Unit and Integration Tests
+        run: |
+          dart pub get
+          dart test

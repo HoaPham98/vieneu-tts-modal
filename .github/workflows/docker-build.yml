@@ -9,6 +9,7 @@ on:
     paths:
       - "Dockerfile"
       - "server.py"
+      - "webui.py"
       - "entrypoint.sh"
       - "preset_voices/**"
       - ".dockerignore"
@@ -19,6 +20,7 @@ on:
     paths:
       - "Dockerfile"
       - "server.py"
+      - "webui.py"
       - "entrypoint.sh"
       - "preset_voices/**"
   workflow_dispatch:

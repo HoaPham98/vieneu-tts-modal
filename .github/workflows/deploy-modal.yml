@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - main
+    paths:
+      - "modal_app.py"
+      - "requirements.txt"
+      - "preset_voices/**"
+      - "entrypoint.sh"
+      - ".github/workflows/deploy-modal.yml"
   workflow_dispatch:
 
 # Không cho phép 2 lần deploy chồng nhau.
