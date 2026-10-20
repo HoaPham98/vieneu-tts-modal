@@ -9,12 +9,15 @@ use rust_lib_vieneu_tts::api::{dispose_engine, init_engine, synthesize_speech};
 fn main() -> Result<()> {
     let model_path = std::env::var("MODEL_PATH")
         .unwrap_or_else(|_| "/tmp/vieneu_test/model.gguf".to_string());
+    let dict_path = std::env::var("DICT_PATH")
+        .unwrap_or_else(|_| "/tmp/vieneu_test/sea_g2p.bin".to_string());
     let output_dir = std::env::var("OUTPUT_DIR")
         .unwrap_or_else(|_| "output_audio".to_string());
 
     println!("============================================================");
     println!("VieNeu-TTS On-Device Synthesis & Streaming E2E Test");
     println!("Model Path: {}", model_path);
+    println!("Dict Path:  {}", dict_path);
     println!("Output Dir: {}", output_dir);
     println!("============================================================");
 
@@ -25,13 +28,21 @@ fn main() -> Result<()> {
     let model_size_mb = fs::metadata(model_file)?.len() as f64 / (1024.0 * 1024.0);
     println!("Model size on disk: {:.2} MB", model_size_mb);
 
+    let dict_file = Path::new(&dict_path);
+    if dict_file.exists() {
+        let dict_size_mb = fs::metadata(dict_file)?.len() as f64 / (1024.0 * 1024.0);
+        println!("Dictionary size on disk: {:.2} MB", dict_size_mb);
+    } else {
+        println!("⚠️ Dictionary file not found at: {} (will fallback to raw text)", dict_path);
+    }
+
     fs::create_dir_all(&output_dir)
         .with_context(|| format!("Failed to create output dir: {}", output_dir))?;
 
     // 1. Initialize Engine
-    println!("\n[1/4] Initializing native TTS engine with 4 threads...");
+    println!("\n[1/4] Initializing native TTS engine with 4 threads and G2P phonemizer...");
     let init_start = Instant::now();
-    init_engine(model_path.clone(), 4).context("Failed to init engine")?;
+    init_engine(model_path.clone(), Some(dict_path.clone()), 4).context("Failed to init engine")?;
     println!("✓ Engine initialized in {:.2?}", init_start.elapsed());
 
     // 2. Synthesize with Minh Quan Pro (Male - Northern)

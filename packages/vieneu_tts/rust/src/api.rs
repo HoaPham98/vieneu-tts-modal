@@ -1,5 +1,5 @@
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -8,8 +8,42 @@ use flutter_rust_bridge::frb;
 use hound::{WavSpec, WavWriter};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use sea_g2p_rs::g2p::G2PEngine;
+use sea_g2p_rs::lang::vi::Normalizer;
 
 use crate::embedded_voices;
+
+struct Phonemizer {
+    engine: G2PEngine,
+    normalizer: Normalizer,
+}
+
+impl Phonemizer {
+    fn new(dict_path: &Path) -> Result<Self> {
+        let path_str = dict_path.to_string_lossy();
+        let engine = G2PEngine::new(&path_str)
+            .map_err(|e| anyhow!("Failed to load sea_g2p dictionary at {}: {}", path_str, e))?;
+        let normalizer = Normalizer::new("vi", Some(&path_str));
+        Ok(Self { engine, normalizer })
+    }
+
+    fn phonemize(&self, text: &str) -> String {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return String::new();
+        }
+        let normalized = self.normalizer.normalize(trimmed, true);
+        let mut phonemes = self.engine.phonemize(&normalized);
+        if !phonemes.is_empty()
+            && !phonemes.ends_with('.')
+            && !phonemes.ends_with('?')
+            && !phonemes.ends_with('!')
+        {
+            phonemes.push('.');
+        }
+        phonemes
+    }
+}
 
 struct EngineState {
     _registry: Registry,
@@ -17,13 +51,18 @@ struct EngineState {
     model_path: PathBuf,
     threads: i32,
     cache_dir: PathBuf,
+    phonemizer: Option<Phonemizer>,
 }
 
 static ENGINE: Lazy<Arc<Mutex<Option<EngineState>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 
 /// Initializes the native TTS engine with the given GGUF model path.
 #[frb]
-pub fn init_engine(model_path: String, threads: usize) -> Result<()> {
+pub fn init_engine(
+    model_path: String,
+    dict_path: Option<String>,
+    threads: usize,
+) -> Result<()> {
     let mut lock = ENGINE.lock();
 
     let path = PathBuf::from(&model_path);
@@ -41,12 +80,31 @@ pub fn init_engine(model_path: String, threads: usize) -> Result<()> {
         .load(&model_path, None, None)
         .context("Failed to load VieNeu-TTS GGUF model")?;
 
+    let resolved_dict = dict_path
+        .map(PathBuf::from)
+        .or_else(|| path.parent().map(|p| p.join("sea_g2p.bin")));
+
+    let phonemizer = match resolved_dict {
+        Some(dp) if dp.exists() => match Phonemizer::new(&dp) {
+            Ok(p) => Some(p),
+            Err(e) => {
+                eprintln!(
+                    "Warning: Failed to initialize SEA-G2P phonemizer from {:?}: {:?}",
+                    dp, e
+                );
+                None
+            }
+        },
+        _ => None,
+    };
+
     *lock = Some(EngineState {
         _registry: registry,
         model,
         model_path: path,
         threads: threads.max(1) as i32,
         cache_dir,
+        phonemizer,
     });
 
     Ok(())
@@ -100,7 +158,22 @@ pub fn synthesize_speech(text: String, voice: String, speed: f32) -> Result<Vec<
         )
         .context("Failed to create task session")?;
 
-    let mut req = Request::tts(&text)
+    let ipa_input = match &state.phonemizer {
+        Some(ph) => {
+            let res = ph.phonemize(&text);
+            if res.is_empty() {
+                text.clone()
+            } else {
+                res
+            }
+        }
+        None => {
+            eprintln!("Warning: SEA-G2P phonemizer not available, passing raw text to TTS engine!");
+            text.clone()
+        }
+    };
+
+    let mut req = Request::tts(&ipa_input)
         .option("reference_codes_file", codes_path.to_string_lossy().to_string())
         .option("speaker_embedding_file", emb_path.to_string_lossy().to_string());
 

@@ -229,11 +229,12 @@ jobs:
       - name: Install CMake, Ninja & Audio libraries
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libasound2-dev curl
 
-      - name: Download official GGUF Model weights
+      - name: Download official GGUF Model weights & SEA-G2P Dictionary
         run: |
           mkdir -p /tmp/vieneu_test
           curl -sSfL -o /tmp/vieneu_test/model.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
-          ls -lh /tmp/vieneu_test/model.gguf
+          curl -sSfL -o /tmp/vieneu_test/sea_g2p.bin "https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin"
+          ls -lh /tmp/vieneu_test/
 
       - name: Run Flutter Unit Tests
         run: |
@@ -244,6 +245,7 @@ jobs:
         working-directory: packages/vieneu_tts/rust
         env:
           MODEL_PATH: /tmp/vieneu_test/model.gguf
+          DICT_PATH: /tmp/vieneu_test/sea_g2p.bin
           OUTPUT_DIR: ../output_audio
         run: |
           cargo run --example test_synthesis --verbose

@@ -29,6 +29,8 @@ class VieneuTts {
 
   static const String defaultModelUrl =
       'https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf';
+  static const String defaultDictUrl =
+      'https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin';
 
   /// Ensures native Rust bridge bindings are initialized.
   static Future<void> _ensureBridge() async {
@@ -38,14 +40,12 @@ class VieneuTts {
     }
   }
 
-  /// Downloads the official VieNeu-TTS v3 Turbo GGUF model (188 MB) to [destinationDir].
-  ///
-  /// Emits progress from 0.0 to 1.0 via [onProgress].
-  /// Returns the absolute path of the downloaded file.
-  static Future<String> downloadModel({
+  /// Downloads a file from [url] to [destinationDir]/[fileName].
+  static Future<String> _downloadFile({
     required String destinationDir,
-    String modelUrl = defaultModelUrl,
-    String fileName = 'vieneu-v3-turbo-q8_0.gguf',
+    required String url,
+    required String fileName,
+    int minExpectedBytes = 10 * 1024 * 1024,
     void Function(double progress)? onProgress,
   }) async {
     final targetDir = Directory(destinationDir);
@@ -56,10 +56,9 @@ class VieneuTts {
     final targetPath = p.join(destinationDir, fileName);
     final targetFile = File(targetPath);
 
-    // If file already exists and is non-empty (>180MB), return immediately
     if (await targetFile.exists()) {
       final len = await targetFile.length();
-      if (len > 180 * 1024 * 1024) {
+      if (len >= minExpectedBytes) {
         onProgress?.call(1.0);
         return targetPath;
       }
@@ -67,17 +66,17 @@ class VieneuTts {
 
     final client = http.Client();
     try {
-      final request = http.Request('GET', Uri.parse(modelUrl));
+      final request = http.Request('GET', Uri.parse(url));
       final response = await client.send(request);
 
       if (response.statusCode != 200) {
         throw HttpException(
-          'Failed to download model: HTTP ${response.statusCode}',
-          uri: Uri.parse(modelUrl),
+          'Failed to download: HTTP ${response.statusCode}',
+          uri: Uri.parse(url),
         );
       }
 
-      final totalBytes = response.contentLength ?? (188 * 1024 * 1024);
+      final totalBytes = response.contentLength ?? minExpectedBytes;
       var receivedBytes = 0;
 
       final tempPath = '$targetPath.part';
@@ -103,9 +102,42 @@ class VieneuTts {
     }
   }
 
-  /// Initializes the in-process audio.cpp inference engine with the given GGUF [modelPath].
+  /// Downloads the official VieNeu-TTS v3 Turbo GGUF model (188 MB) to [destinationDir].
+  static Future<String> downloadModel({
+    required String destinationDir,
+    String modelUrl = defaultModelUrl,
+    String fileName = 'vieneu-v3-turbo-q8_0.gguf',
+    void Function(double progress)? onProgress,
+  }) async {
+    return _downloadFile(
+      destinationDir: destinationDir,
+      url: modelUrl,
+      fileName: fileName,
+      minExpectedBytes: 180 * 1024 * 1024,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Downloads the official SEA-G2P dictionary (60 MB) to [destinationDir].
+  static Future<String> downloadDictionary({
+    required String destinationDir,
+    String dictUrl = defaultDictUrl,
+    String fileName = 'sea_g2p.bin',
+    void Function(double progress)? onProgress,
+  }) async {
+    return _downloadFile(
+      destinationDir: destinationDir,
+      url: dictUrl,
+      fileName: fileName,
+      minExpectedBytes: 50 * 1024 * 1024,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Initializes the in-process inference engine with the given GGUF [modelPath] and optional [dictPath].
   static Future<void> init({
     required String modelPath,
+    String? dictPath,
     int threads = 4,
   }) async {
     await _ensureBridge();
@@ -113,8 +145,12 @@ class VieneuTts {
       throw FileSystemException('GGUF model file not found', modelPath);
     }
 
+    final resolvedDict = dictPath ?? p.join(p.dirname(modelPath), 'sea_g2p.bin');
+    final actualDict = File(resolvedDict).existsSync() ? resolvedDict : null;
+
     await rust_api.initEngine(
       modelPath: modelPath,
+      dictPath: actualDict,
       threads: BigInt.from(threads),
     );
     _initialized = true;
