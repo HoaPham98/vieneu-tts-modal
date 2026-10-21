@@ -61,20 +61,6 @@ jobs:
           restore-keys: |
             frb-bindings-v1-
 
-      - name: Restore native libraries from artifact if cache missed
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p packages/vieneu_tts/android/src/main/jniLibs
-          mkdir -p packages/vieneu_tts/lib/src/rust
-          if [ ! -f "packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/librust_lib_vieneu_tts.so" ]; then
-            echo "Attempting to download jniLibs from latest successful build..."
-            gh run download 39542400512 -n android-jnilibs -D packages/vieneu_tts/android/src/main/jniLibs || true
-          fi
-          if [ ! -f "packages/vieneu_tts/rust/src/frb_generated.rs" ]; then
-            echo "Attempting to download frb-bindings from latest successful build..."
-            gh run download 39542400512 -n frb-bindings -D packages/vieneu_tts || true
-          fi
 
       - name: Check jniLibs readiness
         id: check-jnilibs

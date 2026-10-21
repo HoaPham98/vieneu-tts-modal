@@ -77,7 +77,10 @@ pub fn init_engine(
 
     let registry = Registry::new().context("Failed to create audio.cpp Registry")?;
     let model = registry
-        .load(&model_path, None, None)
+        .load(&model_path, Some("vieneu_v3_turbo"), None)
+        .or_else(|_| registry.load(&model_path, Some("vieneu-v3-turbo"), None))
+        .or_else(|_| registry.load(&model_path, Some("vietneu_tts"), None))
+        .or_else(|_| registry.load(&model_path, None, None))
         .context("Failed to load VieNeu-TTS GGUF model")?;
 
     let resolved_dict = dict_path
