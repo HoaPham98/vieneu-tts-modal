@@ -1,18 +1,23 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
+import 'package:code_assets/code_assets.dart';
 import 'package:crypto/crypto.dart';
+import 'package:hooks/hooks.dart';
 import 'package:http/http.dart' as http;
-import 'package:native_assets_cli/native_assets_cli.dart';
 import 'package:path/path.dart' as p;
 
 const String packageVersion = '0.1.0';
 const String defaultRepo = 'HoaPham98/vieneu-tts-modal';
 
 void main(List<String> args) async {
-  await build(args, (input, output) async {
+  await build(args, (BuildInput input, BuildOutputBuilder output) async {
     final packageName = input.packageName;
     final packageRoot = input.packageRoot.toFilePath();
+
+    if (!input.config.buildCodeAssets) {
+      return;
+    }
 
     // 1. Resolve Target OS and Architecture
     final targetOS = input.config.code.targetOS;
