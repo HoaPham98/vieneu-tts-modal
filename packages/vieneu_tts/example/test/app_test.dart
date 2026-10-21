@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vieneu_tts/vieneu_tts.dart';
 import 'package:vieneu_tts_example/main.dart';
@@ -12,6 +13,15 @@ void main() {
         .setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall methodCall) async => '/tmp/vieneu_test_docs',
+    );
+  });
+
+  test('flutter_rust_bridge codegen and runtime package version consistency', () {
+    expect(
+      VieneuTts.bridgeCodegenVersion,
+      equals(kFrbVersion),
+      reason:
+          'FRB codegen version must match runtime package version exactly to prevent runtime StateError',
     );
   });
 

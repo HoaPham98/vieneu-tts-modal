@@ -40,6 +40,9 @@ class VieneuTts {
     }
   }
 
+  /// The flutter_rust_bridge codegen version used for bridge generation.
+  static String get bridgeCodegenVersion => RustLib.instance.codegenVersion;
+
   /// Downloads a file from [url] to [destinationDir]/[fileName].
   static Future<String> _downloadFile({
     required String destinationDir,

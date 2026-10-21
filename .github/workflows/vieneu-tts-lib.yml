@@ -92,8 +92,10 @@ jobs:
           flutter pub get
           cd example && flutter pub get
 
-      - name: Analyze code
-        run: flutter analyze
+      - name: Analyze code and run package tests
+        run: |
+          flutter analyze
+          flutter test --verbose
 
   rust-check:
     name: Rust Bridge & audio-cpp Check
@@ -256,7 +258,8 @@ jobs:
       - name: Run Example App Tests & Lint
         run: |
           flutter analyze
-          flutter test --verbose
+          flutter test test/app_test.dart --verbose
+          flutter test integration_test/app_test.dart --verbose
 
       - name: Stage native libraries for Android app packaging
         run: |
