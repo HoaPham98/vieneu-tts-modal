@@ -8,61 +8,88 @@ import 'package:vieneu_tts_example/main.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  group('VieNeu TTS Example App Integration Test', () {
-    testWidgets('App launches, renders UI, and displays voice catalogue',
-        (WidgetTester tester) async {
-      await tester.pumpWidget(const VieneuTtsExampleApp());
-      await tester.pumpAndSettle();
+  group('VieNeu TTS Example App On-Device E2E Test', () {
+    testWidgets(
+      'Full lifecycle: UI render, Download resources, Init engine, Synthesize WAV, and Stream PCM',
+      (WidgetTester tester) async {
+        // 1. Launch Example Application
+        await tester.pumpWidget(const VieneuTtsExampleApp());
+        await tester.pumpAndSettle();
 
-      // Verify Title
-      expect(find.text('VieNeu TTS (On-Device)'), findsOneWidget);
+        // Verify Title and core components
+        expect(find.text('VieNeu TTS (On-Device)'), findsOneWidget);
+        expect(find.byType(TextField), findsOneWidget);
+        expect(VieneuTts.availableVoices.length, equals(25));
 
-      // Verify Status Card renders
-      expect(find.byType(Card), findsAtLeastNWidgets(2));
+        // 2. Resource Download & Engine Initialization
+        final downloadBtn = find.text('Tải Model & Dictionary (~248 MB)');
+        if (downloadBtn.evaluate().isNotEmpty) {
+          // Tap download button on device
+          await tester.tap(downloadBtn);
+          await tester.pump();
 
-      // Verify Available Voices catalogue contains 25 presets
-      expect(VieneuTts.availableVoices.length, equals(25));
-      expect(
-        VieneuTts.availableVoices.any((v) => v.id == 'minh_quan_pro'),
-        isTrue,
-      );
-      expect(
-        VieneuTts.availableVoices.any((v) => v.id == 'ngoc_huyen'),
-        isTrue,
-      );
+          // Wait for download & initialization to complete (up to 180s)
+          var elapsedSeconds = 0;
+          while (!VieneuTts.isInitialized && elapsedSeconds < 180) {
+            await tester.pump(const Duration(seconds: 2));
+            elapsedSeconds += 2;
+          }
+        } else {
+          // If already downloaded or checking, wait for initialization
+          var elapsedSeconds = 0;
+          while (!VieneuTts.isInitialized && elapsedSeconds < 30) {
+            await tester.pump(const Duration(seconds: 1));
+            elapsedSeconds += 1;
+          }
+        }
 
-      // Verify Text Field exists with default Vietnamese text
-      expect(find.byType(TextField), findsOneWidget);
-      expect(find.textContaining('VieNeu TTS'), findsAtLeastNWidgets(1));
+        // Verify engine is initialized offline
+        expect(VieneuTts.isInitialized, isTrue,
+            reason: 'Engine must be initialized after model/dictionary download');
+        await tester.pumpAndSettle();
 
-      // Verify Synthesis buttons exist
-      expect(find.text('Đọc (WAV)'), findsOneWidget);
-      expect(find.text('Stream thời gian thực'), findsOneWidget);
-    });
+        // 3. Test Synthesis to WAV Audio
+        final wavBtn = find.text('Đọc (WAV)');
+        expect(wavBtn, findsOneWidget);
+        await tester.tap(wavBtn);
+        await tester.pump();
 
-    testWidgets('Offline synthesis lifecycle test', (WidgetTester tester) async {
-      await tester.pumpWidget(const VieneuTtsExampleApp());
-      await tester.pumpAndSettle();
+        // Wait for synthesis to complete (up to 30s)
+        var synthWait = 0;
+        var hasCompletedWav = false;
+        while (synthWait < 30) {
+          await tester.pump(const Duration(seconds: 1));
+          synthWait += 1;
+          if (find.textContaining('Độ trễ').evaluate().isNotEmpty ||
+              find.byIcon(Icons.play_arrow).evaluate().isNotEmpty) {
+            hasCompletedWav = true;
+            break;
+          }
+        }
+        expect(hasCompletedWav, isTrue,
+            reason: 'WAV synthesis should complete and display latency/player');
 
-      // If test environment has cached models, verify initialization
-      final modelEnv = Platform.environment['MODEL_PATH'];
-      final dictEnv = Platform.environment['DICT_PATH'];
+        // 4. Test Real-Time Audio Chunk Streaming
+        final streamBtn = find.text('Stream thời gian thực');
+        expect(streamBtn, findsOneWidget);
+        await tester.tap(streamBtn);
+        await tester.pump();
 
-      if (modelEnv != null && File(modelEnv).existsSync()) {
-        await VieneuTts.init(
-          modelPath: modelEnv,
-          dictPath: dictEnv,
-        );
-        expect(VieneuTts.isInitialized, isTrue);
-
-        // Synthesize sample phrase
-        final audioBytes = await VieneuTts.synthesize(
-          text: 'Xin chào',
-          voice: 'minh_quan_pro',
-        );
-        expect(audioBytes.isNotEmpty, isTrue);
-        expect(audioBytes.length, greaterThan(44)); // Valid WAV header
-      }
-    });
+        // Wait for streaming to complete (up to 30s)
+        var streamWait = 0;
+        var hasStreamed = false;
+        while (streamWait < 30) {
+          await tester.pump(const Duration(seconds: 1));
+          streamWait += 1;
+          if (find.textContaining('Stream hoàn tất').evaluate().isNotEmpty ||
+              find.textContaining('chunk').evaluate().isNotEmpty) {
+            hasStreamed = true;
+            break;
+          }
+        }
+        expect(hasStreamed, isTrue,
+            reason: 'Real-time audio chunk streaming should emit chunks and complete');
+      },
+    );
   });
 }

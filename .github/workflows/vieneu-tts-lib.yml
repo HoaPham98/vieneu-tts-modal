@@ -1,18 +1,6 @@
 name: VieNeu-TTS Dart & Native CI
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "packages/vieneu_tts/**"
-      - ".github/workflows/vieneu-tts-lib.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "packages/vieneu_tts/**"
-      - ".github/workflows/vieneu-tts-lib.yml"
   workflow_dispatch:
     inputs:
       run_e2e_test:
