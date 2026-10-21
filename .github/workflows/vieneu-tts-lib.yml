@@ -279,10 +279,10 @@ jobs:
           ls -lh "$APK_FILE"
           echo "=== Native Libraries in APK ==="
           unzip -l "$APK_FILE" | grep "lib/" || true
-          if unzip -l "$APK_FILE" | grep -q "libvieneu_tts.so"; then
-            echo "✓ Confirmed: libvieneu_tts.so is bundled inside the release APK!"
+          if unzip -l "$APK_FILE" | grep -q "librust_lib_vieneu_tts.so"; then
+            echo "✓ Confirmed: librust_lib_vieneu_tts.so is bundled inside the release APK!"
           else
-            echo "ERROR: libvieneu_tts.so not found in APK!"
+            echo "ERROR: librust_lib_vieneu_tts.so not found in APK!"
             exit 1
           fi
 
