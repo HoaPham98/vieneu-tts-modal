@@ -216,9 +216,7 @@ jobs:
           profile: pixel_4
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-          script: |
-            cd packages/vieneu_tts/example
-            flutter test integration_test/app_test.dart --verbose
+          script: cd packages/vieneu_tts/example && flutter test integration_test/app_test.dart --verbose
 
       - name: Build Android Release APK (arm64-v8a)
         working-directory: packages/vieneu_tts/example
