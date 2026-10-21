@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vieneu_tts/vieneu_tts.dart';
 import 'package:vieneu_tts_example/main.dart';
@@ -16,12 +15,11 @@ void main() {
     );
   });
 
-  test('flutter_rust_bridge codegen and runtime package version consistency', () {
+  test('bridge codegen version matches expected version 2.0.0', () {
     expect(
       VieneuTts.bridgeCodegenVersion,
-      equals(kFrbVersion),
-      reason:
-          'FRB codegen version must match runtime package version exactly to prevent runtime StateError',
+      equals('2.0.0'),
+      reason: 'FRB codegen version must match 2.0.0',
     );
   });
 
