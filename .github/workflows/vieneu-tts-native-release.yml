@@ -226,8 +226,21 @@ jobs:
       - name: Install CMake & Ninja
         run: brew install cmake ninja
 
+      - name: Configure CMake iOS Helper
+        run: |
+          cat << 'EOF' > /tmp/ios_fix.cmake
+          function(set_xcode_property TARGET XCODE_PROPERTY XCODE_VALUE)
+            set_property(TARGET ${TARGET} PROPERTY XCODE_ATTRIBUTE_${XCODE_PROPERTY} ${XCODE_VALUE})
+          endfunction()
+          EOF
+          echo "CMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/ios_fix.cmake" >> $GITHUB_ENV
+          echo "CMAKE_ARGS=-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/ios_fix.cmake" >> $GITHUB_ENV
+
       - name: Cargo build for iOS device
         working-directory: packages/vieneu_tts/rust
+        env:
+          CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/ios_fix.cmake"
+          CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/ios_fix.cmake"
         run: |
           cargo build --release --target aarch64-apple-ios --verbose
           ls -lh target/aarch64-apple-ios/release/librust_lib_vieneu_tts.dylib || ls -lh target/aarch64-apple-ios/release/librust_lib_vieneu_tts.a
