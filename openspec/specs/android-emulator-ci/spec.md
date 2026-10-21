@@ -53,3 +53,10 @@ The CI workflow SHALL compile a release Android APK targeting `arm64-v8a`, verif
 #### Scenario: Build and upload release APK
 - **WHEN** integration tests pass successfully
 - **THEN** release APK is built, verified for embedded native libraries, and uploaded to GitHub Actions artifacts with 14-day retention.
+
+### Requirement: Toolchain-Purged Consumer Verification
+The CI workflow SHALL execute Android and Dart verification jobs in an environment with Rust, Cargo, and Android NDK purged, proving consumer applications build and run using prebuilt binaries without local native compilers.
+
+#### Scenario: Building consumer app in purged environment
+- **WHEN** consumer test job runs after removing Rust and NDK toolchains
+- **THEN** `flutter build apk` succeeds and inspects that both `librust_lib_vieneu_tts.so` and `libc++_shared.so` are bundled in the resulting APK.
