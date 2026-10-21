@@ -11,7 +11,7 @@ echo "Emulator is fully booted."
 
 echo "=== 2. Pre-building debug APK ==="
 cd packages/vieneu_tts/example
-flutter build apk --debug
+flutter build apk --debug --target-platform android-x64 --android-skip-build-dependency-validation
 
 echo "=== 3. Pre-installing debug APK to create app sandbox ==="
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
