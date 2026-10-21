@@ -186,8 +186,35 @@ jobs:
       - name: Stage native libraries for Android app
         run: |
           cd packages/vieneu_tts/example
-          mkdir -p android/app/src/main/jniLibs
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a android/app/src/main/jniLibs/x86_64
           cp -r ../android/src/main/jniLibs/* android/app/src/main/jniLibs/
+
+          # Find and bundle libc++_shared.so from pre-installed Android NDK
+          NDK_DIR=$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -n 1)
+          echo "Using Android NDK at: $NDK_DIR"
+
+          ARM64_LIBCXX=$(find "$NDK_DIR" -path "*/aarch64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
+          X64_LIBCXX=$(find "$NDK_DIR" -path "*/x86_64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
+
+          echo "ARM64 libc++: $ARM64_LIBCXX"
+          echo "X86_64 libc++: $X64_LIBCXX"
+
+          if [ -n "$ARM64_LIBCXX" ] && [ -f "$ARM64_LIBCXX" ]; then
+            cp "$ARM64_LIBCXX" android/app/src/main/jniLibs/arm64-v8a/
+            cp "$ARM64_LIBCXX" ../android/src/main/jniLibs/arm64-v8a/
+          else
+            echo "ERROR: aarch64 libc++_shared.so not found!"
+            exit 1
+          fi
+
+          if [ -n "$X64_LIBCXX" ] && [ -f "$X64_LIBCXX" ]; then
+            cp "$X64_LIBCXX" android/app/src/main/jniLibs/x86_64/
+            cp "$X64_LIBCXX" ../android/src/main/jniLibs/x86_64/
+          else
+            echo "ERROR: x86_64 libc++_shared.so not found!"
+            exit 1
+          fi
+
           [ -f android/gradlew ] && chmod +x android/gradlew || true
           ls -laR android/app/src/main/jniLibs/
 
@@ -250,7 +277,7 @@ jobs:
           fi
           echo "=== APK File Info ==="
           ls -lh "$APK_FILE"
-          python3 -c "import zipfile; z = zipfile.ZipFile('$APK_FILE'); libs = [f.filename for f in z.infolist() if 'lib/' in f.filename]; print('Embedded native libs:'); [print(' -', l) for l in libs]; assert any('librust_lib_vieneu_tts.so' in l for l in libs), 'librust_lib_vieneu_tts.so missing!'"
+          python3 -c "import zipfile; z = zipfile.ZipFile('$APK_FILE'); libs = [f.filename for f in z.infolist() if 'lib/' in f.filename]; print('Embedded native libs:'); [print(' -', l) for l in libs]; assert any('librust_lib_vieneu_tts.so' in l for l in libs), 'librust_lib_vieneu_tts.so missing!'; assert any('libc++_shared.so' in l for l in libs), 'libc++_shared.so missing!'"
 
       - name: Upload Android Release APK
         uses: actions/upload-artifact@v4
