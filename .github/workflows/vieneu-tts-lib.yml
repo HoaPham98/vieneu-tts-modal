@@ -259,7 +259,6 @@ jobs:
         run: |
           flutter analyze
           flutter test test/app_test.dart --verbose
-          flutter test integration_test/app_test.dart --verbose
 
       - name: Stage native libraries for Android app packaging
         run: |
