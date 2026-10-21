@@ -78,12 +78,35 @@ pub fn init_engine(
     crate::embedded_configs::ensure_model_configs(&path)
         .context("Failed to ensure embedded model config sidecar files")?;
 
+    // If the file is not named model.gguf, ensure model.gguf exists in the same directory
+    let resolved_path = if path.file_name().and_then(|s| s.to_str()) != Some("model.gguf") {
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let model_gguf = parent.join("model.gguf");
+        if !model_gguf.exists() {
+            #[cfg(unix)]
+            let _ = std::os::unix::fs::symlink(&path, &model_gguf);
+            if !model_gguf.exists() {
+                let _ = std::fs::copy(&path, &model_gguf);
+            }
+        }
+        if model_gguf.exists() {
+            let _ = crate::embedded_configs::ensure_model_configs(&model_gguf);
+            model_gguf
+        } else {
+            path.clone()
+        }
+    } else {
+        path.clone()
+    };
+
+    let resolved_str = resolved_path.to_string_lossy().to_string();
     let registry = Registry::new().context("Failed to create audio.cpp Registry")?;
-    let family_hint = ModelFamily::from_path(&model_path).unwrap_or(ModelFamily::VieneuV3Turbo);
+    let family_hint = ModelFamily::from_path(&resolved_str).unwrap_or(ModelFamily::VieneuV3Turbo);
     let model = registry
-        .load(&model_path, Some(family_hint.clone()), None)
-        .or_else(|_| registry.load(&model_path, Some(ModelFamily::VieneuV3Turbo), None))
-        .or_else(|_| registry.load(&model_path, Some(ModelFamily::Custom("vietneu_tts".to_string())), None))
+        .load(&resolved_str, None, None)
+        .or_else(|_| registry.load(&resolved_str, Some(family_hint.clone()), None))
+        .or_else(|_| registry.load(&resolved_str, Some(ModelFamily::VieneuV3Turbo), None))
+        .or_else(|_| registry.load(&resolved_str, Some(ModelFamily::Custom("vietneu_tts".to_string())), None))
         .or_else(|_| registry.load(&model_path, None, None))
         .context("Failed to load VieNeu-TTS GGUF model")?;
 

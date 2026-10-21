@@ -109,7 +109,7 @@ class VieneuTts {
   static Future<String> downloadModel({
     required String destinationDir,
     String modelUrl = defaultModelUrl,
-    String fileName = 'vieneu-v3-turbo-q8_0.gguf',
+    String fileName = 'model.gguf',
     void Function(double progress)? onProgress,
   }) async {
     return _downloadFile(

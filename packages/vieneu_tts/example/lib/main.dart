@@ -95,14 +95,20 @@ class _TtsHomePageState extends State<TtsHomePage> {
     try {
       final modelsDir = await _getModelsDir();
       debugPrint('--> [VieNeu] modelsDir: $modelsDir');
-      final modelFile = File(p.join(modelsDir, 'vieneu-v3-turbo-q8_0.gguf'));
+      var modelFile = File(p.join(modelsDir, 'model.gguf'));
+      if (!await modelFile.exists() || await modelFile.length() < 100 * 1024 * 1024) {
+        final legacyFile = File(p.join(modelsDir, 'vieneu-v3-turbo-q8_0.gguf'));
+        if (await legacyFile.exists() && await legacyFile.length() >= 100 * 1024 * 1024) {
+          modelFile = legacyFile;
+        }
+      }
       final dictFile = File(p.join(modelsDir, 'sea_g2p.bin'));
 
       final mExists = await modelFile.exists();
       final mLen = mExists ? await modelFile.length() : 0;
       final dExists = await dictFile.exists();
       final dLen = dExists ? await dictFile.length() : 0;
-      debugPrint('--> [VieNeu] modelFile: exists=$mExists, len=$mLen');
+      debugPrint('--> [VieNeu] modelFile: ${modelFile.path}, exists=$mExists, len=$mLen');
       debugPrint('--> [VieNeu] dictFile: exists=$dExists, len=$dLen');
 
       final hasModel = mExists && mLen > 100 * 1024 * 1024;

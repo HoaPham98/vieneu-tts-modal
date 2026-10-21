@@ -173,19 +173,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/vieneu_models
-          key: vieneu-models-assets-v2
+          key: vieneu-models-assets-v3
 
       - name: Download Model Weights on Host Runner if cache missed
         if: steps.cache-models.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/vieneu_models
           echo "Downloading GGUF model..."
-          curl -sSfL -o /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
+          curl -sSfL -o /tmp/vieneu_models/model.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
+          cp /tmp/vieneu_models/model.gguf /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf
           echo "Downloading SEA-G2P dictionary..."
           curl -sSfL -o /tmp/vieneu_models/sea_g2p.bin "https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin"
 
       - name: Prepare Model Sidecar Configs on Host Runner
         run: |
+          if [ -f /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf ] && [ ! -f /tmp/vieneu_models/model.gguf ]; then
+            cp /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf /tmp/vieneu_models/model.gguf
+          fi
+          if [ -f /tmp/vieneu_models/model.gguf ] && [ ! -f /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf ]; then
+            cp /tmp/vieneu_models/model.gguf /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf
+          fi
           mkdir -p /tmp/vieneu_models/model_specs /tmp/vieneu_models/speech_tokenizer
           cp packages/vieneu_tts/rust/assets/model_spec.json /tmp/vieneu_models/
           cp packages/vieneu_tts/rust/assets/model_spec.json /tmp/vieneu_models/vieneu_v3_turbo.json
