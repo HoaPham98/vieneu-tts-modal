@@ -27,28 +27,113 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache Android jniLibs
+        id: cache-jnilibs
+        uses: actions/cache@v4
+        with:
+          path: packages/vieneu_tts/android/src/main/jniLibs
+          key: jnilibs-android-v1-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
+          restore-keys: |
+            jnilibs-android-v1-
+
+      - name: Cache Generated Bindings
+        id: cache-bindings
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/vieneu_tts/lib/src/rust/
+            packages/vieneu_tts/rust/src/frb_generated.*
+          key: frb-bindings-v1-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
+          restore-keys: |
+            frb-bindings-v1-
+
+      - name: Restore from previous build artifact if cache missed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p packages/vieneu_tts/android/src/main/jniLibs
+          mkdir -p packages/vieneu_tts/lib/src/rust
+          if [ ! -f "packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/librust_lib_vieneu_tts.so" ]; then
+            echo "Attempting to download jniLibs from latest successful build..."
+            gh run download 39542400512 -n android-jnilibs -D packages/vieneu_tts/android/src/main/jniLibs || true
+          fi
+          if [ ! -f "packages/vieneu_tts/rust/src/frb_generated.rs" ]; then
+            echo "Attempting to download frb-bindings from latest successful build..."
+            gh run download 39542400512 -n frb-bindings -D packages/vieneu_tts || true
+          fi
+
+      - name: Check jniLibs readiness
+        id: check-jnilibs
+        run: |
+          if [ -f "packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/librust_lib_vieneu_tts.so" ] && [ -f "packages/vieneu_tts/android/src/main/jniLibs/x86_64/librust_lib_vieneu_tts.so" ]; then
+            echo "ready=true" >> $GITHUB_OUTPUT
+            echo "✓ Native libraries already available (from cache/artifact)!"
+          else
+            echo "ready=false" >> $GITHUB_OUTPUT
+            echo "Building native libraries from source..."
+          fi
+
       - name: Setup Rust toolchain
+        if: steps.check-jnilibs.outputs.ready != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android, x86_64-linux-android
 
       - name: Setup Flutter SDK
+        if: steps.check-jnilibs.outputs.ready != 'true'
         uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
 
       - name: Install flutter_rust_bridge_codegen
+        if: steps.check-jnilibs.outputs.ready != 'true'
         run: |
           curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
           flutter_rust_bridge_codegen --version
 
       - name: Generate Bindings
+        if: steps.check-jnilibs.outputs.ready != 'true'
         run: |
           mkdir -p packages/vieneu_tts/lib/src/rust
           cd packages/vieneu_tts
           flutter pub get
           flutter_rust_bridge_codegen generate
+
+      - name: Setup Android NDK
+        if: steps.check-jnilibs.outputs.ready != 'true'
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          add-to-path: true
+
+      - name: Install cargo-ndk
+        if: steps.check-jnilibs.outputs.ready != 'true'
+        run: cargo install cargo-ndk --locked || true
+
+      - name: Install CMake & Ninja
+        if: steps.check-jnilibs.outputs.ready != 'true'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Rust Cache
+        if: steps.check-jnilibs.outputs.ready != 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/vieneu_tts/rust
+
+      - name: Build Android arm64-v8a & x86_64 shared libraries
+        if: steps.check-jnilibs.outputs.ready != 'true'
+        working-directory: packages/vieneu_tts/rust
+        run: |
+          mkdir -p ../android/src/main/jniLibs
+          cargo ndk -t arm64-v8a -t x86_64 -o ../android/src/main/jniLibs build --release --verbose
+
+      - name: Verify jniLibs before upload
+        run: |
+          echo "=== arm64-v8a libraries ==="
+          ls -lh packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/
+          echo "=== x86_64 libraries ==="
+          ls -lh packages/vieneu_tts/android/src/main/jniLibs/x86_64/
 
       - name: Upload Generated Bindings
         uses: actions/upload-artifact@v4
@@ -58,28 +143,6 @@ jobs:
             packages/vieneu_tts/lib/src/rust/
             packages/vieneu_tts/rust/src/frb_generated.*
           retention-days: 1
-
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r26b
-          add-to-path: true
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked || true
-
-      - name: Install CMake & Ninja
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
-
-      - name: Build Android arm64-v8a & x86_64 shared libraries
-        working-directory: packages/vieneu_tts/rust
-        run: |
-          mkdir -p ../android/src/main/jniLibs
-          cargo ndk -t arm64-v8a -t x86_64 -o ../android/src/main/jniLibs build --release --verbose
-          echo "=== arm64-v8a libraries ==="
-          ls -lh ../android/src/main/jniLibs/arm64-v8a/
-          echo "=== x86_64 libraries ==="
-          ls -lh ../android/src/main/jniLibs/x86_64/
 
       - name: Upload Android jniLibs
         uses: actions/upload-artifact@v4
@@ -125,7 +188,7 @@ jobs:
           cd packages/vieneu_tts/example
           mkdir -p android/app/src/main/jniLibs
           cp -r ../android/src/main/jniLibs/* android/app/src/main/jniLibs/
-          chmod +x android/gradlew
+          [ -f android/gradlew ] && chmod +x android/gradlew || true
           ls -laR android/app/src/main/jniLibs/
 
       - name: Enable KVM permissions

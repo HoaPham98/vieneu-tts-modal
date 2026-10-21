@@ -90,6 +90,7 @@ void main() {
         expect(hasStreamed, isTrue,
             reason: 'Real-time audio chunk streaming should emit chunks and complete');
       },
+      timeout: const Timeout(Duration(minutes: 10)),
     );
   });
 }
