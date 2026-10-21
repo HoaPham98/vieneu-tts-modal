@@ -173,7 +173,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /tmp/vieneu_models
-          key: vieneu-models-assets-v1
+          key: vieneu-models-assets-v2
 
       - name: Download Model Weights on Host Runner if cache missed
         if: steps.cache-models.outputs.cache-hit != 'true'
@@ -183,7 +183,17 @@ jobs:
           curl -sSfL -o /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
           echo "Downloading SEA-G2P dictionary..."
           curl -sSfL -o /tmp/vieneu_models/sea_g2p.bin "https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin"
-          ls -lh /tmp/vieneu_models/
+
+      - name: Prepare Model Sidecar Configs on Host Runner
+        run: |
+          mkdir -p /tmp/vieneu_models/model_specs /tmp/vieneu_models/speech_tokenizer
+          cp packages/vieneu_tts/rust/assets/model_spec.json /tmp/vieneu_models/
+          cp packages/vieneu_tts/rust/assets/model_spec.json /tmp/vieneu_models/vieneu_v3_turbo.json
+          cp packages/vieneu_tts/rust/assets/model_spec.json /tmp/vieneu_models/model_specs/vieneu_v3_turbo.json
+          cp packages/vieneu_tts/rust/assets/config.json /tmp/vieneu_models/
+          cp packages/vieneu_tts/rust/assets/tokenizer_config.json /tmp/vieneu_models/
+          cp packages/vieneu_tts/rust/assets/speech_tokenizer_config.json /tmp/vieneu_models/speech_tokenizer/config.json
+          ls -laR /tmp/vieneu_models/
 
       - name: Run On-Device Integration Test on Android Emulator
         uses: reactivecircus/android-emulator-runner@v2

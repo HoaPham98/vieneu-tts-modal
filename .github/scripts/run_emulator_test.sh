@@ -23,14 +23,13 @@ echo "=== 4. Pushing offline models to app sandbox ==="
 adb root
 adb wait-for-device
 adb shell "mkdir -p /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models"
-adb push /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models/
-adb push /tmp/vieneu_models/sea_g2p.bin /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models/
+adb push /tmp/vieneu_models/. /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models/
 
 APP_UID=$(adb shell stat -c '%u:%g' /data/user/0/com.vieneu.tts.example | tr -d '\r')
 echo "Setting permissions for UID: $APP_UID..."
 adb shell "chown -R $APP_UID /data/user/0/com.vieneu.tts.example/app_flutter"
 adb shell "chmod -R 777 /data/user/0/com.vieneu.tts.example/app_flutter"
-adb shell "ls -la /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models"
+adb shell "ls -laR /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models"
 
 adb unroot
 adb wait-for-device

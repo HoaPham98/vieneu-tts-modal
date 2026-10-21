@@ -75,11 +75,15 @@ pub fn init_engine(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::env::temp_dir());
 
+    crate::embedded_configs::ensure_model_configs(&path)
+        .context("Failed to ensure embedded model config sidecar files")?;
+
     let registry = Registry::new().context("Failed to create audio.cpp Registry")?;
     let family_hint = ModelFamily::from_path(&model_path).unwrap_or(ModelFamily::VieneuV3Turbo);
     let model = registry
         .load(&model_path, Some(family_hint.clone()), None)
         .or_else(|_| registry.load(&model_path, Some(ModelFamily::VieneuV3Turbo), None))
+        .or_else(|_| registry.load(&model_path, Some(ModelFamily::Custom("vietneu_tts".to_string())), None))
         .or_else(|_| registry.load(&model_path, None, None))
         .context("Failed to load VieNeu-TTS GGUF model")?;
 
