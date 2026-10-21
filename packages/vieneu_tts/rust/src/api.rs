@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use audio_cpp::{Backend, Model, Registry, Request, RunMode, TaskKind};
+use audio_cpp::{Backend, Model, ModelFamily, Registry, Request, RunMode, TaskKind};
 use flutter_rust_bridge::frb;
 use hound::{WavSpec, WavWriter};
 use once_cell::sync::Lazy;
@@ -76,10 +76,10 @@ pub fn init_engine(
         .unwrap_or_else(|| std::env::temp_dir());
 
     let registry = Registry::new().context("Failed to create audio.cpp Registry")?;
+    let family_hint = ModelFamily::from_path(&model_path).unwrap_or(ModelFamily::VieneuV3Turbo);
     let model = registry
-        .load(&model_path, Some("vieneu_v3_turbo"), None)
-        .or_else(|_| registry.load(&model_path, Some("vieneu-v3-turbo"), None))
-        .or_else(|_| registry.load(&model_path, Some("vietneu_tts"), None))
+        .load(&model_path, Some(family_hint.clone()), None)
+        .or_else(|_| registry.load(&model_path, Some(ModelFamily::VieneuV3Turbo), None))
         .or_else(|_| registry.load(&model_path, None, None))
         .context("Failed to load VieNeu-TTS GGUF model")?;
 
