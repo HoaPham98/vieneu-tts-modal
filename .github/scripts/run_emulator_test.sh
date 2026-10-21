@@ -10,7 +10,7 @@ done
 echo "Emulator is fully booted."
 
 echo "=== 2. Pre-building debug APK ==="
-cd packages/vieneu_tts/example
+cd packages/flutter_vieneu_tts/example
 flutter build apk --debug --target-platform android-x64 --android-skip-build-dependency-validation
 
 echo "=== 2.1 Verifying debug APK native libraries ==="

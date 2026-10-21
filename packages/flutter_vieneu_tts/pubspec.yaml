@@ -1,0 +1,21 @@
+name: flutter_vieneu_tts
+description: Flutter wrapper and utilities for on-device VieNeu-TTS Vietnamese Text-to-Speech library.
+version: 0.1.0
+homepage: https://github.com/HoaPham98/vieneu-tts-modal
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+  flutter: ">=3.24.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  vieneu_tts:
+    path: ../vieneu_tts
+  path_provider: ^2.1.2
+  path: ^1.9.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0

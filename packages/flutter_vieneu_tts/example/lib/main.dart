@@ -5,7 +5,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
-import 'package:vieneu_tts/vieneu_tts.dart';
+import 'package:flutter_vieneu_tts/flutter_vieneu_tts.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

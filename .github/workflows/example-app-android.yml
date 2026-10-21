@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "packages/vieneu_tts/**"
+      - "packages/flutter_vieneu_tts/**"
       - ".github/workflows/example-app-android.yml"
       - ".github/scripts/**"
   pull_request:
@@ -13,6 +14,7 @@ on:
       - main
     paths:
       - "packages/vieneu_tts/**"
+      - "packages/flutter_vieneu_tts/**"
       - ".github/workflows/example-app-android.yml"
       - ".github/scripts/**"
   workflow_dispatch:
@@ -41,12 +43,12 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Cache Android jniLibs
-        id: cache-jnilibs
+      - name: Cache Prebuilt Android Archives
+        id: cache-prebuilts
         uses: actions/cache@v4
         with:
-          path: packages/vieneu_tts/android/src/main/jniLibs
-          key: jnilibs-android-v2-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
+          path: dist
+          key: prebuilt-android-v1-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
 
       - name: Cache Generated Bindings
         id: cache-bindings
@@ -55,34 +57,34 @@ jobs:
           path: |
             packages/vieneu_tts/lib/src/rust/
             packages/vieneu_tts/rust/src/frb_generated.*
-          key: frb-bindings-v2-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
+          key: frb-bindings-v3-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
 
-      - name: Check jniLibs readiness
-        id: check-jnilibs
+      - name: Check prebuilt readiness
+        id: check-prebuilts
         run: |
-          if [ "${{ steps.cache-jnilibs.outputs.cache-hit }}" == "true" ] && [ "${{ steps.cache-bindings.outputs.cache-hit }}" == "true" ] && [ -f "packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/librust_lib_vieneu_tts.so" ] && [ -f "packages/vieneu_tts/android/src/main/jniLibs/x86_64/librust_lib_vieneu_tts.so" ]; then
+          if [ "${{ steps.cache-prebuilts.outputs.cache-hit }}" == "true" ] && [ "${{ steps.cache-bindings.outputs.cache-hit }}" == "true" ] && [ -f "dist/vieneu_tts-android-arm64-v0.1.0.tar.gz" ] && [ -f "dist/vieneu_tts-android-x64-v0.1.0.tar.gz" ]; then
             echo "ready=true" >> $GITHUB_OUTPUT
-            echo "✓ Native libraries exactly matched cache!"
+            echo "✓ Prebuilt native archives exactly matched cache!"
           else
             echo "ready=false" >> $GITHUB_OUTPUT
-            echo "Cache miss or Rust code modified: building native libraries from source..."
-            rm -rf packages/vieneu_tts/android/src/main/jniLibs/*
+            echo "Cache miss or Rust code modified: compiling native prebuilt archives from source..."
+            rm -rf dist/*
           fi
 
       - name: Setup Rust toolchain
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android, x86_64-linux-android
 
       - name: Install flutter_rust_bridge_codegen
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         run: |
           curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
           flutter_rust_bridge_codegen --version
 
       - name: Generate Bindings
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         run: |
           mkdir -p packages/vieneu_tts/lib/src/rust
           cd packages/vieneu_tts
@@ -90,67 +92,80 @@ jobs:
           flutter_rust_bridge_codegen generate
 
       - name: Setup Android NDK
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r26b
           add-to-path: true
 
       - name: Install cargo-ndk
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         run: cargo install cargo-ndk --locked || true
 
       - name: Install CMake & Ninja
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
       - name: Rust Cache
-        if: steps.check-jnilibs.outputs.ready != 'true'
+        if: steps.check-prebuilts.outputs.ready != 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: packages/vieneu_tts/rust
 
-      - name: Build Android arm64-v8a & x86_64 shared libraries
-        if: steps.check-jnilibs.outputs.ready != 'true'
-        working-directory: packages/vieneu_tts/rust
+      - name: Compile and Package Prebuilt Archives
+        if: steps.check-prebuilts.outputs.ready != 'true'
         run: |
-          mkdir -p ../android/src/main/jniLibs
-          cargo ndk -t arm64-v8a -t x86_64 -o ../android/src/main/jniLibs build --release --verbose
+          cd packages/vieneu_tts/rust
+          mkdir -p ../android_build
+          cargo ndk -t arm64-v8a -t x86_64 -o ../android_build build --release --verbose
 
-      - name: Stage native libraries & bundle libc++_shared.so
-        run: |
-          cd packages/vieneu_tts/example
-          mkdir -p android/app/src/main/jniLibs/arm64-v8a android/app/src/main/jniLibs/x86_64
-          cp -r ../android/src/main/jniLibs/* android/app/src/main/jniLibs/
-
-          # Find and bundle libc++_shared.so from pre-installed Android NDK
+          # Locate libc++_shared.so from NDK
           NDK_DIR=$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -n 1)
-          echo "Using Android NDK at: $NDK_DIR"
-
           ARM64_LIBCXX=$(find "$NDK_DIR" -path "*/aarch64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
           X64_LIBCXX=$(find "$NDK_DIR" -path "*/x86_64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
 
-          echo "ARM64 libc++: $ARM64_LIBCXX"
-          echo "X86_64 libc++: $X64_LIBCXX"
+          cp "$ARM64_LIBCXX" ../android_build/arm64-v8a/
+          cp "$X64_LIBCXX" ../android_build/x86_64/
 
-          if [ -n "$ARM64_LIBCXX" ] && [ -f "$ARM64_LIBCXX" ]; then
-            cp "$ARM64_LIBCXX" android/app/src/main/jniLibs/arm64-v8a/
-            cp "$ARM64_LIBCXX" ../android/src/main/jniLibs/arm64-v8a/
-          else
-            echo "ERROR: aarch64 libc++_shared.so not found!"
+          cd ../../..
+          mkdir -p dist
+          tar -czvf dist/vieneu_tts-android-arm64-v0.1.0.tar.gz -C packages/vieneu_tts/android_build/arm64-v8a librust_lib_vieneu_tts.so libc++_shared.so
+          tar -czvf dist/vieneu_tts-android-x64-v0.1.0.tar.gz -C packages/vieneu_tts/android_build/x86_64 librust_lib_vieneu_tts.so libc++_shared.so
+
+          cd dist
+          sha256sum vieneu_tts-android-arm64-v0.1.0.tar.gz > vieneu_tts-android-arm64-v0.1.0.tar.gz.sha256
+          sha256sum vieneu_tts-android-x64-v0.1.0.tar.gz > vieneu_tts-android-x64-v0.1.0.tar.gz.sha256
+          ls -lh
+
+      - name: Start Mock Artifact Server
+        run: |
+          mkdir -p dist
+          nohup python3 -m http.server 8080 --directory dist > /tmp/artifact_server.log 2>&1 &
+          sleep 2
+          curl -I http://127.0.0.1:8080/vieneu_tts-android-arm64-v0.1.0.tar.gz
+
+      - name: PURGE Rust and Android NDK toolchains
+        run: |
+          echo "=== Purging Rust & Cargo ==="
+          sudo rm -rf /home/runner/.cargo /home/runner/.rustup /usr/share/rust /usr/local/cargo
+          export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v 'cargo' | tr '\n' ':')
+          echo "PATH=$PATH" >> $GITHUB_ENV
+
+          echo "=== Purging Android NDK ==="
+          sudo rm -rf /usr/local/lib/android/sdk/ndk*
+          unset ANDROID_NDK_HOME
+          unset ANDROID_NDK_ROOT
+
+          echo "=== Verifying Hermetic Zero-Rust Consumer Environment ==="
+          if command -v cargo &> /dev/null; then
+            echo "ERROR: cargo is still installed!"
             exit 1
           fi
-
-          if [ -n "$X64_LIBCXX" ] && [ -f "$X64_LIBCXX" ]; then
-            cp "$X64_LIBCXX" android/app/src/main/jniLibs/x86_64/
-            cp "$X64_LIBCXX" ../android/src/main/jniLibs/x86_64/
-          else
-            echo "ERROR: x86_64 libc++_shared.so not found!"
+          if command -v rustc &> /dev/null; then
+            echo "ERROR: rustc is still installed!"
             exit 1
           fi
-
-          [ -f android/gradlew ] && chmod +x android/gradlew || true
-          ls -laR android/app/src/main/jniLibs/
+          echo "✓ Confirmed: Runner has ZERO Rust and ZERO NDK toolchains!"
 
       - name: Enable KVM permissions
         run: |
@@ -160,10 +175,15 @@ jobs:
           sudo chmod 666 /dev/kvm || true
           ls -l /dev/kvm || true
 
-      - name: Install dependencies & analyze
+      - name: Install dependencies & analyze packages
+        env:
+          VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
         run: |
           cd packages/vieneu_tts
+          dart pub get
+          cd ../flutter_vieneu_tts
           flutter pub get
+          flutter analyze
           cd example
           flutter pub get
           flutter analyze
@@ -202,7 +222,9 @@ jobs:
           cp packages/vieneu_tts/rust/assets/speech_tokenizer_config.json /tmp/vieneu_models/speech_tokenizer/config.json
           ls -laR /tmp/vieneu_models/
 
-      - name: Run On-Device Integration Test on Android Emulator
+      - name: Run On-Device Integration Test on Android Emulator (Prebuilt Binaries)
+        env:
+          VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -213,13 +235,15 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
           script: bash .github/scripts/run_emulator_test.sh
 
-      - name: Build Android Release APK (arm64-v8a)
-        working-directory: packages/vieneu_tts/example
+      - name: Build Android Release APK (Zero-Rust Consumer Verification)
+        env:
+          VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
+        working-directory: packages/flutter_vieneu_tts/example
         run: |
           flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
 
-      - name: Verify APK Integrity & Embedded Native Libraries
-        working-directory: packages/vieneu_tts/example
+      - name: Verify APK Integrity & Embedded Prebuilt Libraries
+        working-directory: packages/flutter_vieneu_tts/example
         run: |
           APK_FILE="build/app/outputs/flutter-apk/app-release.apk"
           if [ ! -f "$APK_FILE" ]; then
@@ -229,10 +253,11 @@ jobs:
           echo "=== APK File Info ==="
           ls -lh "$APK_FILE"
           python3 -c "import zipfile; z = zipfile.ZipFile('$APK_FILE'); libs = [f.filename for f in z.infolist() if 'lib/' in f.filename]; print('Embedded native libs:'); [print(' -', l) for l in libs]; assert any('librust_lib_vieneu_tts.so' in l for l in libs), 'librust_lib_vieneu_tts.so missing!'; assert any('libc++_shared.so' in l for l in libs), 'libc++_shared.so missing!'"
+          echo "✓ Consumer APK successfully packaged with prebuilt native assets!"
 
       - name: Upload Android Release APK
         uses: actions/upload-artifact@v4
         with:
           name: vieneu-tts-example-apk
-          path: packages/vieneu_tts/example/build/app/outputs/flutter-apk/app-release.apk
+          path: packages/flutter_vieneu_tts/example/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14

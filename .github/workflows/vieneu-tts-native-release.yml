@@ -1,0 +1,197 @@
+name: VieNeu-TTS Native Matrix Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.1.0)'
+        required: true
+        default: '0.1.0'
+      publish:
+        description: 'Publish assets to GitHub Release'
+        type: boolean
+        default: false
+
+concurrency:
+  group: vieneu-tts-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux-x64:
+    name: Build Linux (x86_64) Prebuilt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install build tools (CMake, Ninja, ALSA)
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libasound2-dev
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/vieneu_tts/rust
+
+      - name: Build release shared library
+        working-directory: packages/vieneu_tts/rust
+        run: |
+          cargo build --release --verbose
+          ls -lh target/release/librust_lib_vieneu_tts.so
+
+      - name: Package Linux tarball
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          mkdir -p dist
+          tar -czvf dist/vieneu_tts-linux-x64-v${VERSION}.tar.gz -C packages/vieneu_tts/rust/target/release librust_lib_vieneu_tts.so
+          cd dist
+          sha256sum vieneu_tts-linux-x64-v${VERSION}.tar.gz > vieneu_tts-linux-x64-v${VERSION}.tar.gz.sha256
+          ls -lh
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-linux-x64
+          path: dist/*
+          retention-days: 7
+
+  build-android:
+    name: Build Android (arm64-v8a & x86_64) Prebuilts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, x86_64-linux-android
+
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r26b
+          add-to-path: true
+
+      - name: Install cargo-ndk & CMake
+        run: |
+          cargo install cargo-ndk --locked || true
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/vieneu_tts/rust
+
+      - name: Build Android arm64-v8a & x86_64
+        working-directory: packages/vieneu_tts/rust
+        run: |
+          mkdir -p ../android_build
+          cargo ndk -t arm64-v8a -t x86_64 -o ../android_build build --release --verbose
+
+      - name: Package Android Prebuilt Archives
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          mkdir -p dist
+
+          # Locate NDK libc++_shared.so
+          NDK_DIR=$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -n 1)
+          ARM64_LIBCXX=$(find "$NDK_DIR" -path "*/aarch64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
+          X64_LIBCXX=$(find "$NDK_DIR" -path "*/x86_64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
+
+          cp "$ARM64_LIBCXX" packages/vieneu_tts/android_build/arm64-v8a/
+          cp "$X64_LIBCXX" packages/vieneu_tts/android_build/x86_64/
+
+          # Package arm64
+          tar -czvf dist/vieneu_tts-android-arm64-v${VERSION}.tar.gz -C packages/vieneu_tts/android_build/arm64-v8a librust_lib_vieneu_tts.so libc++_shared.so
+
+          # Package x86_64
+          tar -czvf dist/vieneu_tts-android-x64-v${VERSION}.tar.gz -C packages/vieneu_tts/android_build/x86_64 librust_lib_vieneu_tts.so libc++_shared.so
+
+          cd dist
+          sha256sum vieneu_tts-android-arm64-v${VERSION}.tar.gz > vieneu_tts-android-arm64-v${VERSION}.tar.gz.sha256
+          sha256sum vieneu_tts-android-x64-v${VERSION}.tar.gz > vieneu_tts-android-x64-v${VERSION}.tar.gz.sha256
+          ls -lh
+
+      - name: Upload Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-android
+          path: dist/*
+          retention-days: 7
+
+  build-ios:
+    name: Build iOS (arm64) Prebuilt
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+
+      - name: Install CMake & Ninja
+        run: brew install cmake ninja
+
+      - name: Cargo build for iOS device
+        working-directory: packages/vieneu_tts/rust
+        run: |
+          cargo build --release --target aarch64-apple-ios --verbose
+          ls -lh target/aarch64-apple-ios/release/librust_lib_vieneu_tts.dylib || ls -lh target/aarch64-apple-ios/release/librust_lib_vieneu_tts.a
+
+      - name: Package iOS archive
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          mkdir -p dist
+          # Copy whatever was produced (dylib or a)
+          cd packages/vieneu_tts/rust/target/aarch64-apple-ios/release
+          tar -czvf ../../../../../dist/vieneu_tts-ios-arm64-v${VERSION}.tar.gz librust_lib_vieneu_tts.*
+          cd ../../../../../dist
+          sha256sum vieneu_tts-ios-arm64-v${VERSION}.tar.gz > vieneu_tts-ios-arm64-v${VERSION}.tar.gz.sha256
+          ls -lh
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-ios
+          path: dist/*
+          retention-days: 7
+
+  publish:
+    name: Publish Release Artifacts to GitHub
+    needs: [build-linux-x64, build-android, build-ios]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all built artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-dist
+          merge-multiple: true
+
+      - name: Inspect and upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="v${{ github.event.inputs.version }}"
+          fi
+          echo "Uploading release assets for tag: $TAG"
+          ls -lh all-dist/
+          gh release upload "$TAG" all-dist/* --clobber || gh release create "$TAG" all-dist/* --title "$TAG" --notes "VieNeu-TTS Prebuilt Native Binaries"
