@@ -207,6 +207,23 @@ jobs:
           flutter pub get
           flutter analyze
 
+      - name: Cache Model Weights on Host Runner
+        id: cache-models
+        uses: actions/cache@v4
+        with:
+          path: /tmp/vieneu_models
+          key: vieneu-models-assets-v1
+
+      - name: Download Model Weights on Host Runner if cache missed
+        if: steps.cache-models.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/vieneu_models
+          echo "Downloading GGUF model..."
+          curl -sSfL -o /tmp/vieneu_models/vieneu-v3-turbo-q8_0.gguf "https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo/resolve/main/gguf/vieneu-v3-turbo-q8_0.gguf"
+          echo "Downloading SEA-G2P dictionary..."
+          curl -sSfL -o /tmp/vieneu_models/sea_g2p.bin "https://github.com/pnnbao97/sea-g2p/releases/download/v0.10.0/sea_g2p.bin"
+          ls -lh /tmp/vieneu_models/
+
       - name: Run On-Device Integration Test on Android Emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -216,7 +233,7 @@ jobs:
           profile: pixel_4
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio
-          script: cd packages/vieneu_tts/example && flutter test integration_test/app_test.dart --verbose
+          script: bash .github/scripts/run_emulator_test.sh
 
       - name: Build Android Release APK (arm64-v8a)
         working-directory: packages/vieneu_tts/example
