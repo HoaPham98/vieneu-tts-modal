@@ -27,6 +27,8 @@ jobs:
   build-test-and-package:
     name: Build, Test & Package Android Example App
     runs-on: ubuntu-latest
+    env:
+      VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -143,6 +145,7 @@ jobs:
           nohup python3 -m http.server 8080 --directory dist > /tmp/artifact_server.log 2>&1 &
           sleep 2
           curl -I http://127.0.0.1:8080/vieneu_tts-android-arm64-v0.1.0.tar.gz
+          echo "VIENEU_TTS_BINARY_URL=http://127.0.0.1:8080" >> $GITHUB_ENV
 
       - name: PURGE Rust and Android NDK toolchains
         run: |
@@ -240,6 +243,11 @@ jobs:
           VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
         working-directory: packages/flutter_vieneu_tts/example
         run: |
+          if ! curl -s -I http://127.0.0.1:8080/vieneu_tts-android-arm64-v0.1.0.tar.gz > /dev/null; then
+            echo "Mock artifact server not responding, starting it on port 8080..."
+            nohup python3 -m http.server 8080 --directory "$GITHUB_WORKSPACE/dist" > /tmp/artifact_server.log 2>&1 &
+            sleep 2
+          fi
           flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
 
       - name: Verify APK Integrity & Embedded Prebuilt Libraries

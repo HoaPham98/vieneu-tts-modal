@@ -66,11 +66,40 @@ void main(List<String> args) async {
         (extraAndroidLib != null && !await extraAndroidLib.exists());
 
     if (needsDownload) {
-      stdout.writeln('Prebuilt binary missing in cache. Downloading for $targetId...');
-      await _downloadAndExtract(
-        targetId: targetId,
-        cacheDir: cacheDir,
+      stdout.writeln('Prebuilt binary missing in cache. Resolving for $targetId...');
+
+      final archiveFileName = 'vieneu_tts-$targetId-v$packageVersion.tar.gz';
+      final localDistArchive = File(
+        Platform.environment['VIENEU_TTS_LOCAL_ARCHIVE'] ??
+            p.join(packageRoot, '..', '..', 'dist', archiveFileName),
       );
+
+      final hasCustomBinaryUrl = Platform.environment['VIENEU_TTS_BINARY_URL'] != null;
+
+      if (!hasCustomBinaryUrl && await localDistArchive.exists()) {
+        stdout.writeln('Using local repository archive: ${localDistArchive.path}');
+        await _extractArchive(
+          archiveBytes: await localDistArchive.readAsBytes(),
+          cacheDir: cacheDir,
+        );
+      } else {
+        try {
+          await _downloadAndExtract(
+            targetId: targetId,
+            cacheDir: cacheDir,
+          );
+        } catch (e) {
+          if (await localDistArchive.exists()) {
+            stdout.writeln('Download failed ($e). Falling back to local archive: ${localDistArchive.path}');
+            await _extractArchive(
+              archiveBytes: await localDistArchive.readAsBytes(),
+              cacheDir: cacheDir,
+            );
+          } else {
+            rethrow;
+          }
+        }
+      }
     }
 
     if (!await binaryFile.exists()) {
@@ -190,18 +219,28 @@ Future<void> _downloadAndExtract({
     }
 
     // Extract tar.gz into cacheDir
-    final decompressed = GZipDecoder().decodeBytes(archiveBytes);
-    final tarArchive = TarDecoder().decodeBytes(decompressed);
-
-    for (final file in tarArchive) {
-      final filename = file.name;
-      if (file.isFile) {
-        final outFile = File(p.join(cacheDir.path, p.basename(filename)));
-        await outFile.writeAsBytes(file.content as List<int>);
-        stdout.writeln('Extracted: ${outFile.path}');
-      }
-    }
+    await _extractArchive(
+      archiveBytes: archiveBytes,
+      cacheDir: cacheDir,
+    );
   } finally {
     client.close();
+  }
+}
+
+Future<void> _extractArchive({
+  required List<int> archiveBytes,
+  required Directory cacheDir,
+}) async {
+  final decompressed = GZipDecoder().decodeBytes(archiveBytes);
+  final tarArchive = TarDecoder().decodeBytes(decompressed);
+
+  for (final file in tarArchive) {
+    final filename = file.name;
+    if (file.isFile) {
+      final outFile = File(p.join(cacheDir.path, p.basename(filename)));
+      await outFile.writeAsBytes(file.content as List<int>);
+      stdout.writeln('Extracted: ${outFile.path}');
+    }
   }
 }

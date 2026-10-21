@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+export VIENEU_TTS_BINARY_URL="${VIENEU_TTS_BINARY_URL:-http://127.0.0.1:8080}"
+echo "VIENEU_TTS_BINARY_URL=$VIENEU_TTS_BINARY_URL"
+
+# Ensure mock artifact server is responsive
+WORKSPACE_ROOT="$(pwd)"
+if ! curl -s -I http://127.0.0.1:8080/vieneu_tts-android-x64-v0.1.0.tar.gz > /dev/null; then
+  if [ -d "$WORKSPACE_ROOT/dist" ]; then
+    echo "Mock artifact server not responding, starting it on port 8080..."
+    nohup python3 -m http.server 8080 --directory "$WORKSPACE_ROOT/dist" > /tmp/artifact_server.log 2>&1 &
+    sleep 2
+  fi
+fi
+
 echo "=== 1. Waiting for Android Emulator to finish booting ==="
 adb wait-for-device
 while [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" != "1" ]; do
