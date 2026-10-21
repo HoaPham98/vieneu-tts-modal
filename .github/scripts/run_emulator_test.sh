@@ -29,6 +29,8 @@ APP_UID=$(adb shell stat -c '%u:%g' /data/user/0/com.vieneu.tts.example | tr -d 
 echo "Setting permissions for UID: $APP_UID..."
 adb shell "chown -R $APP_UID /data/user/0/com.vieneu.tts.example/app_flutter"
 adb shell "chmod -R 777 /data/user/0/com.vieneu.tts.example/app_flutter"
+adb shell "mkdir -p /data/local/tmp && chmod 777 /data/local/tmp"
+adb shell "ln -s /data/local/tmp /tmp 2>/dev/null || true"
 adb shell "ls -laR /data/user/0/com.vieneu.tts.example/app_flutter/vieneu_models"
 
 adb unroot

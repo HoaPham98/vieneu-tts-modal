@@ -75,6 +75,20 @@ pub fn init_engine(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::env::temp_dir());
 
+    let cache_dir_str = cache_dir.to_string_lossy().to_string();
+    std::env::set_var("TMPDIR", &cache_dir_str);
+    std::env::set_var("TEMP", &cache_dir_str);
+    std::env::set_var("TMP", &cache_dir_str);
+    #[cfg(unix)]
+    unsafe {
+        use std::ffi::CString;
+        if let Ok(c_path) = CString::new(cache_dir_str.clone()) {
+            libc::setenv(b"TMPDIR\0".as_ptr() as *const libc::c_char, c_path.as_ptr(), 1);
+            libc::setenv(b"TEMP\0".as_ptr() as *const libc::c_char, c_path.as_ptr(), 1);
+            libc::setenv(b"TMP\0".as_ptr() as *const libc::c_char, c_path.as_ptr(), 1);
+        }
+    }
+
     crate::embedded_configs::ensure_model_configs(&path)
         .context("Failed to ensure embedded model config sidecar files")?;
 
@@ -102,12 +116,41 @@ pub fn init_engine(
     let resolved_str = resolved_path.to_string_lossy().to_string();
     let registry = Registry::new().context("Failed to create audio.cpp Registry")?;
     let family_hint = ModelFamily::from_path(&resolved_str).unwrap_or(ModelFamily::VieneuV3Turbo);
+
+    let spec_path = cache_dir.join("model_spec.json");
+    let options_json = if spec_path.exists() {
+        Some(format!(r#"{{"model_spec_override":"{}"}}"#, spec_path.to_string_lossy()))
+    } else {
+        None
+    };
+    let options_str = options_json.as_deref();
+
     let model = registry
-        .load(&resolved_str, None, None)
-        .or_else(|_| registry.load(&resolved_str, Some(family_hint.clone()), None))
-        .or_else(|_| registry.load(&resolved_str, Some(ModelFamily::VieneuV3Turbo), None))
-        .or_else(|_| registry.load(&resolved_str, Some(ModelFamily::Custom("vietneu_tts".to_string())), None))
-        .or_else(|_| registry.load(&model_path, None, None))
+        .load(&resolved_str, Some(ModelFamily::VieneuV3Turbo), options_str)
+        .or_else(|e1| {
+            eprintln!("Load attempt 1 (VieneuV3Turbo with spec override) failed: {:?}", e1);
+            registry.load(&resolved_str, None, options_str)
+        })
+        .or_else(|e2| {
+            eprintln!("Load attempt 2 (None with spec override) failed: {:?}", e2);
+            registry.load(&resolved_str, Some(family_hint.clone()), options_str)
+        })
+        .or_else(|e3| {
+            eprintln!("Load attempt 3 (family_hint with spec override) failed: {:?}", e3);
+            registry.load(&resolved_str, Some(ModelFamily::Custom("vietneu_tts".to_string())), options_str)
+        })
+        .or_else(|e4| {
+            eprintln!("Load attempt 4 (vietneu_tts with spec override) failed: {:?}", e4);
+            registry.load(&resolved_str, None, None)
+        })
+        .or_else(|e5| {
+            eprintln!("Load attempt 5 (None without spec override) failed: {:?}", e5);
+            registry.load(&resolved_str, Some(ModelFamily::VieneuV3Turbo), None)
+        })
+        .or_else(|e6| {
+            eprintln!("Load attempt 6 (VieneuV3Turbo without spec override) failed: {:?}", e6);
+            registry.load(&model_path, None, None)
+        })
         .context("Failed to load VieNeu-TTS GGUF model")?;
 
     let resolved_dict = dict_path
