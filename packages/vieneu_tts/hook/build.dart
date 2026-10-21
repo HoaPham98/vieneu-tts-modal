@@ -41,7 +41,6 @@ void main(List<String> args) async {
           output: output,
           packageName: packageName,
           binaryFile: overridePath,
-          targetOS: targetOS,
         );
         return;
       }
@@ -85,7 +84,6 @@ void main(List<String> args) async {
       output: output,
       packageName: packageName,
       binaryFile: binaryFile,
-      targetOS: targetOS,
       extraLib: extraAndroidLib != null && await extraAndroidLib.exists() ? extraAndroidLib : null,
     );
   });
@@ -123,7 +121,6 @@ void _registerCodeAssets({
   required BuildOutputBuilder output,
   required String packageName,
   required File binaryFile,
-  required OS targetOS,
   File? extraLib,
 }) {
   final binaryUri = binaryFile.uri;
@@ -134,7 +131,6 @@ void _registerCodeAssets({
       package: packageName,
       name: 'rust_lib_vieneu_tts',
       linkMode: DynamicLoadingBundled(),
-      os: targetOS,
       file: binaryUri,
     ),
   );
@@ -146,7 +142,6 @@ void _registerCodeAssets({
         package: packageName,
         name: 'libc++_shared.so',
         linkMode: DynamicLoadingBundled(),
-        os: targetOS,
         file: extraLib.uri,
       ),
     );
