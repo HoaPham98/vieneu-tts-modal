@@ -19,13 +19,75 @@ concurrency:
   group: vieneu-tts-release-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
-  build-linux-x64:
-    name: Build Linux (x86_64) Prebuilt
+  generate-bindings:
+    name: Generate FRB Bindings
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install flutter_rust_bridge_codegen
+        run: |
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+          flutter_rust_bridge_codegen --version
+
+      - name: Generate Bindings
+        run: |
+          mkdir -p packages/vieneu_tts/lib/src/rust
+          cd packages/vieneu_tts
+          dart pub get
+          flutter_rust_bridge_codegen generate
+          cd ../..
+          tar -czvf /tmp/frb_bindings.tar.gz packages/vieneu_tts/rust/src/frb_generated.* packages/vieneu_tts/lib/src/rust
+
+      - name: Upload Bindings Tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: frb-bindings
+          path: /tmp/frb_bindings.tar.gz
+          retention-days: 1
+
+      - name: Persist generated bindings to main
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packages/vieneu_tts/rust/src/frb_generated.* packages/vieneu_tts/lib/src/rust
+          git commit -m "chore(frb): persist generated bindings [skip ci]" || true
+          git push origin main || true
+
+  build-linux-x64:
+    name: Build Linux (x86_64) Prebuilt
+    needs: [generate-bindings]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download FRB Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: /tmp
+
+      - name: Unpack FRB Bindings
+        run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -65,10 +127,20 @@ jobs:
 
   build-android:
     name: Build Android (arm64-v8a & x86_64) Prebuilts
+    needs: [generate-bindings]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download FRB Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: /tmp
+
+      - name: Unpack FRB Bindings
+        run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -131,10 +203,20 @@ jobs:
 
   build-ios:
     name: Build iOS (arm64) Prebuilt
+    needs: [generate-bindings]
     runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download FRB Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: /tmp
+
+      - name: Unpack FRB Bindings
+        run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
