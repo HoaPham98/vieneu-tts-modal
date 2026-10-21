@@ -21,6 +21,6 @@
 - [x] 4.4 Verify embedded `.so` libraries and upload release APK artifact `vieneu-tts-example-apk`
 
 ## 5. Execution & Verification
-- [ ] 5.1 Push changes to GitHub repository to trigger the dedicated workflow
-- [ ] 5.2 Monitor workflow execution via `gh run watch` until complete
-- [ ] 5.3 Verify integration test passes on Android Emulator and download release APK artifact
+- [x] 5.1 Push changes to GitHub repository to trigger the dedicated workflow
+- [x] 5.2 Monitor workflow execution via `gh run watch` until complete
+- [x] 5.3 Verify integration test passes on Android Emulator and download release APK artifact
