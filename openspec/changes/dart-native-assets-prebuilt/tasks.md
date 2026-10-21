@@ -25,5 +25,5 @@
 
 - [x] 4.1 Create `.github/workflows/vieneu-tts-native-release.yml` to compile native libraries for Linux x64, Android arm64/x64 (bundling `libc++_shared.so`), and iOS, creating `.tar.gz` release archives with checksums
 - [x] 4.2 Create a toolchain-purged test job in `.github/workflows/example-app-android.yml` that removes `cargo`, `rustc`, and `$ANDROID_HOME/ndk`
-- [ ] 4.3 Verify in CI that a clean consumer app builds release APK and bundles both `librust_lib_vieneu_tts.so` and `libc++_shared.so` without compiling from source
-- [ ] 4.4 Run on-device Android emulator integration test verifying speech synthesis with prebuilt native assets
+- [x] 4.3 Verify in CI that a clean consumer app builds release APK and bundles both `librust_lib_vieneu_tts.so` and `libc++_shared.so` without compiling from source
+- [x] 4.4 Run on-device Android emulator integration test verifying speech synthesis with prebuilt native assets
