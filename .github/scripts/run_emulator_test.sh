@@ -13,6 +13,9 @@ echo "=== 2. Pre-building debug APK ==="
 cd packages/vieneu_tts/example
 flutter build apk --debug --target-platform android-x64 --android-skip-build-dependency-validation
 
+echo "=== 2.1 Verifying debug APK native libraries ==="
+python3 -c "import zipfile; z = zipfile.ZipFile('build/app/outputs/flutter-apk/app-debug.apk'); libs = [f.filename for f in z.infolist() if 'lib/' in f.filename]; print('Debug APK native libs:'); [print(' -', l) for l in libs]; assert any('librust_lib_vieneu_tts.so' in l for l in libs), 'Missing native so in debug APK!'"
+
 echo "=== 3. Pre-installing debug APK to create app sandbox ==="
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
 
@@ -33,4 +36,13 @@ adb unroot
 adb wait-for-device
 
 echo "=== 5. Running On-Device Integration Test ==="
+set +e
 flutter test integration_test/app_test.dart --verbose
+TEST_EXIT=$?
+set -e
+
+if [ $TEST_EXIT -ne 0 ]; then
+  echo "=== Test failed! Capturing adb logcat ==="
+  adb logcat -d -s flutter:V AndroidRuntime:E *:S
+  exit $TEST_EXIT
+fi

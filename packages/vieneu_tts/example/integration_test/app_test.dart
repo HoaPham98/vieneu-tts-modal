@@ -33,11 +33,18 @@ void main() {
         while (!VieneuTts.isInitialized && elapsedSeconds < 180) {
           await tester.pump(const Duration(seconds: 2));
           elapsedSeconds += 2;
+          if (elapsedSeconds % 10 == 0) {
+            final texts = tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).where((d) => d != null).toList();
+            debugPrint('[TEST] Elapsed: ${elapsedSeconds}s, UI texts: $texts');
+          }
         }
+
+        final currentUiTexts = tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).where((d) => d != null).toList();
+        debugPrint('[TEST] Final UI texts: $currentUiTexts');
 
         // Verify engine is initialized offline
         expect(VieneuTts.isInitialized, isTrue,
-            reason: 'Engine must be initialized after model/dictionary download');
+            reason: 'Engine must be initialized after model/dictionary download. UI state: $currentUiTexts');
         await tester.pumpAndSettle();
 
         // Enter a short test sentence for fast & reliable on-device synthesis

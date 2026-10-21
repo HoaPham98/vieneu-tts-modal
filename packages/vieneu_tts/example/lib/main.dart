@@ -90,14 +90,23 @@ class _TtsHomePageState extends State<TtsHomePage> {
   }
 
   Future<void> _checkResourceStatus() async {
+    debugPrint('--> [VieNeu] _checkResourceStatus START');
     setState(() => _isChecking = true);
     try {
       final modelsDir = await _getModelsDir();
+      debugPrint('--> [VieNeu] modelsDir: $modelsDir');
       final modelFile = File(p.join(modelsDir, 'vieneu-v3-turbo-q8_0.gguf'));
       final dictFile = File(p.join(modelsDir, 'sea_g2p.bin'));
 
-      final hasModel = await modelFile.exists() && await modelFile.length() > 100 * 1024 * 1024;
-      final hasDict = await dictFile.exists() && await dictFile.length() > 40 * 1024 * 1024;
+      final mExists = await modelFile.exists();
+      final mLen = mExists ? await modelFile.length() : 0;
+      final dExists = await dictFile.exists();
+      final dLen = dExists ? await dictFile.length() : 0;
+      debugPrint('--> [VieNeu] modelFile: exists=$mExists, len=$mLen');
+      debugPrint('--> [VieNeu] dictFile: exists=$dExists, len=$dLen');
+
+      final hasModel = mExists && mLen > 100 * 1024 * 1024;
+      final hasDict = dExists && dLen > 40 * 1024 * 1024;
 
       if (hasModel && hasDict) {
         _modelPath = modelFile.path;
@@ -107,11 +116,13 @@ class _TtsHomePageState extends State<TtsHomePage> {
         });
         await _initializeEngine();
       } else {
+        debugPrint('--> [VieNeu] Resources missing: hasModel=$hasModel, hasDict=$hasDict');
         setState(() {
           _statusMessage = 'Chưa tải model hoặc từ điển. Vui lòng tải để sử dụng offline.';
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('--> [VieNeu] _checkResourceStatus ERROR: $e\n$stack');
       setState(() => _statusMessage = 'Lỗi kiểm tra tài nguyên: $e');
     } finally {
       if (mounted) setState(() => _isChecking = false);
@@ -185,19 +196,27 @@ class _TtsHomePageState extends State<TtsHomePage> {
   }
 
   Future<void> _initializeEngine() async {
-    if (_modelPath == null) return;
+    debugPrint('--> [VieNeu] _initializeEngine START. modelPath: $_modelPath, dictPath: $_dictPath');
+    if (_modelPath == null) {
+      debugPrint('--> [VieNeu] _initializeEngine ABORT: _modelPath is null');
+      return;
+    }
     setState(() => _isInitializing = true);
     try {
+      debugPrint('--> [VieNeu] Calling VieneuTts.init...');
+      final sw = Stopwatch()..start();
       await VieneuTts.init(
         modelPath: _modelPath!,
         dictPath: _dictPath,
       );
+      debugPrint('--> [VieNeu] VieneuTts.init SUCCESS in ${sw.elapsedMilliseconds}ms');
       if (mounted) {
         setState(() {
           _statusMessage = 'VieNeu TTS sẵn sàng hoạt động offline!';
         });
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('--> [VieNeu] VieneuTts.init FAILED: $e\n$stack');
       if (mounted) {
         setState(() {
           _statusMessage = 'Lỗi khởi tạo engine: $e';
