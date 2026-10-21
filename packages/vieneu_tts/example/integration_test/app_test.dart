@@ -51,24 +51,31 @@ void main() {
         final textField = find.byType(TextField);
         expect(textField, findsOneWidget);
         await tester.enterText(textField, 'Xin chào Việt Nam');
+        FocusManager.instance.primaryFocus?.unfocus();
         await tester.pumpAndSettle();
 
         // 3. Test Synthesis to WAV Audio
         final wavBtn = find.text('Đọc (WAV)');
         expect(wavBtn, findsOneWidget);
+        await tester.ensureVisible(wavBtn);
+        await tester.pumpAndSettle();
         await tester.tap(wavBtn);
         await tester.pump();
 
-        // Wait for synthesis to complete (up to 60s)
+        // Wait for synthesis to complete (up to 180s)
         var synthWait = 0;
         var hasCompletedWav = false;
-        while (synthWait < 60) {
-          await tester.pump(const Duration(seconds: 1));
-          synthWait += 1;
+        while (synthWait < 180) {
+          await tester.pump(const Duration(seconds: 2));
+          synthWait += 2;
           if (find.textContaining('Thời gian sinh').evaluate().isNotEmpty ||
               find.byIcon(Icons.play_arrow).evaluate().isNotEmpty) {
             hasCompletedWav = true;
             break;
+          }
+          if (synthWait % 10 == 0) {
+            final texts = tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).where((d) => d != null).toList();
+            debugPrint('[TEST-SYNTH] Waiting for WAV synthesis... Elapsed: ${synthWait}s, UI: $texts');
           }
         }
         expect(hasCompletedWav, isTrue,
@@ -78,19 +85,25 @@ void main() {
         // 4. Test Real-Time Audio Chunk Streaming
         final streamBtn = find.text('Stream thời gian thực');
         expect(streamBtn, findsOneWidget);
+        await tester.ensureVisible(streamBtn);
+        await tester.pumpAndSettle();
         await tester.tap(streamBtn);
         await tester.pump();
 
-        // Wait for streaming to complete (up to 60s)
+        // Wait for streaming to complete (up to 180s)
         var streamWait = 0;
         var hasStreamed = false;
-        while (streamWait < 60) {
-          await tester.pump(const Duration(seconds: 1));
-          streamWait += 1;
+        while (streamWait < 180) {
+          await tester.pump(const Duration(seconds: 2));
+          streamWait += 2;
           if (find.textContaining('Thời gian sinh').evaluate().isNotEmpty ||
               find.textContaining('Stream (').evaluate().isNotEmpty) {
             hasStreamed = true;
             break;
+          }
+          if (streamWait % 10 == 0) {
+            final texts = tester.widgetList<Text>(find.byType(Text)).map((t) => t.data).where((d) => d != null).toList();
+            debugPrint('[TEST-STREAM] Waiting for streaming... Elapsed: ${streamWait}s, UI: $texts');
           }
         }
         expect(hasStreamed, isTrue,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
@@ -235,6 +236,7 @@ class _TtsHomePageState extends State<TtsHomePage> {
 
   Future<void> _synthesizeSpeech({bool isStreaming = false}) async {
     final text = _textController.text.trim();
+    debugPrint('--> [VieNeu] _synthesizeSpeech START: isStreaming=$isStreaming, text="$text"');
     if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng nhập văn bản tiếng Việt.')),
@@ -272,7 +274,14 @@ class _TtsHomePageState extends State<TtsHomePage> {
           }
         }
         stopwatch.stop();
-        _lastAudioBytes = Uint8List.fromList(chunks);
+        final bytes = Uint8List.fromList(chunks);
+        debugPrint('--> [VieNeu] VieneuTts.stream COMPLETED: ${bytes.length} bytes in ${stopwatch.elapsedMilliseconds}ms');
+        if (mounted) {
+          setState(() {
+            _lastAudioBytes = bytes;
+            _lastSynthesisMs = stopwatch.elapsedMilliseconds;
+          });
+        }
       } else {
         final audioBytes = await VieneuTts.synthesize(
           text: text,
@@ -280,15 +289,20 @@ class _TtsHomePageState extends State<TtsHomePage> {
           speed: _speechSpeed,
         );
         stopwatch.stop();
-        _lastAudioBytes = audioBytes;
+        debugPrint('--> [VieNeu] VieneuTts.synthesize COMPLETED: ${audioBytes.length} bytes in ${stopwatch.elapsedMilliseconds}ms');
+        if (mounted) {
+          setState(() {
+            _lastAudioBytes = audioBytes;
+            _lastSynthesisMs = stopwatch.elapsedMilliseconds;
+          });
+        }
       }
-
-      _lastSynthesisMs = stopwatch.elapsedMilliseconds;
 
       if (_lastAudioBytes != null && _lastAudioBytes!.isNotEmpty) {
-        await _playAudio(_lastAudioBytes!);
+        unawaited(_playAudio(_lastAudioBytes!));
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('--> [VieNeu] _synthesizeSpeech FAILED: $e\n$stack');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Lỗi tổng hợp giọng nói: $e'), backgroundColor: Colors.red),
