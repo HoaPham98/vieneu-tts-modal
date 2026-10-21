@@ -258,6 +258,12 @@ jobs:
           flutter analyze
           flutter test --verbose
 
+      - name: Stage native libraries for Android app packaging
+        run: |
+          mkdir -p android/app/src/main/jniLibs
+          cp -r ../android/src/main/jniLibs/* android/app/src/main/jniLibs/
+          ls -laR android/app/src/main/jniLibs/
+
       - name: Build Android Release APK (arm64-v8a)
         run: |
           flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
@@ -271,9 +277,14 @@ jobs:
           fi
           echo "=== APK File Info ==="
           ls -lh "$APK_FILE"
-          echo "=== Inspecting Native Libraries inside APK ==="
-          unzip -l "$APK_FILE" | grep -E "lib/.*libvieneu_tts\.so"
-          echo "✓ Native libvieneu_tts.so is bundled inside the release APK!"
+          echo "=== Native Libraries in APK ==="
+          unzip -l "$APK_FILE" | grep "lib/" || true
+          if unzip -l "$APK_FILE" | grep -q "libvieneu_tts.so"; then
+            echo "✓ Confirmed: libvieneu_tts.so is bundled inside the release APK!"
+          else
+            echo "ERROR: libvieneu_tts.so not found in APK!"
+            exit 1
+          fi
 
       - name: Upload Android Release APK
         uses: actions/upload-artifact@v4
