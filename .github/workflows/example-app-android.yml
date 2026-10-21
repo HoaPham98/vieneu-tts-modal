@@ -46,9 +46,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/vieneu_tts/android/src/main/jniLibs
-          key: jnilibs-android-v1-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
-          restore-keys: |
-            jnilibs-android-v1-
+          key: jnilibs-android-v2-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
 
       - name: Cache Generated Bindings
         id: cache-bindings
@@ -57,20 +55,18 @@ jobs:
           path: |
             packages/vieneu_tts/lib/src/rust/
             packages/vieneu_tts/rust/src/frb_generated.*
-          key: frb-bindings-v1-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
-          restore-keys: |
-            frb-bindings-v1-
-
+          key: frb-bindings-v2-${{ hashFiles('packages/vieneu_tts/rust/**', 'packages/vieneu_tts/pubspec.yaml') }}
 
       - name: Check jniLibs readiness
         id: check-jnilibs
         run: |
-          if [ -f "packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/librust_lib_vieneu_tts.so" ] && [ -f "packages/vieneu_tts/android/src/main/jniLibs/x86_64/librust_lib_vieneu_tts.so" ]; then
+          if [ "${{ steps.cache-jnilibs.outputs.cache-hit }}" == "true" ] && [ "${{ steps.cache-bindings.outputs.cache-hit }}" == "true" ] && [ -f "packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a/librust_lib_vieneu_tts.so" ] && [ -f "packages/vieneu_tts/android/src/main/jniLibs/x86_64/librust_lib_vieneu_tts.so" ]; then
             echo "ready=true" >> $GITHUB_OUTPUT
-            echo "✓ Native libraries already available!"
+            echo "✓ Native libraries exactly matched cache!"
           else
             echo "ready=false" >> $GITHUB_OUTPUT
-            echo "Building native libraries from source..."
+            echo "Cache miss or Rust code modified: building native libraries from source..."
+            rm -rf packages/vieneu_tts/android/src/main/jniLibs/*
           fi
 
       - name: Setup Rust toolchain
