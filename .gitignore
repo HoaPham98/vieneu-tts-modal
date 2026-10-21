@@ -41,6 +41,8 @@ ephemeral/
 **/local.properties
 **/android/**/build/
 **/*.aar
+**/*.apk
+build_apk/
 **/jniLibs/
 
 # iOS / CocoaPods
