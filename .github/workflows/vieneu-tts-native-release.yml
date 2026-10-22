@@ -202,7 +202,7 @@ jobs:
           retention-days: 7
 
   build-ios:
-    name: Build iOS (arm64) Prebuilt
+    name: Build iOS (arm64 & simulator) Prebuilts
     needs: [generate-bindings]
     runs-on: macos-14
     steps:
@@ -249,14 +249,27 @@ jobs:
           cargo build --release --target aarch64-apple-ios --verbose || (sleep 10 && cargo build --release --target aarch64-apple-ios --verbose)
           ls -lh target/aarch64-apple-ios/release/librust_lib_vieneu_tts.dylib || ls -lh target/aarch64-apple-ios/release/librust_lib_vieneu_tts.a
 
-      - name: Package iOS archive
+      - name: Cargo build for iOS simulator
+        working-directory: packages/vieneu_tts/rust
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+          CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/ios_fix.cmake"
+          CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/ios_fix.cmake"
+          RUSTFLAGS: "-C link-arg=-miphonesimulator-version-min=17.0 -C link-arg=-framework -C link-arg=Accelerate -C link-arg=-framework -C link-arg=Metal -C link-arg=-framework -C link-arg=MetalKit -C link-arg=-framework -C link-arg=Foundation"
+        run: |
+          cargo build --release --target aarch64-apple-ios-sim --verbose || (sleep 10 && cargo build --release --target aarch64-apple-ios-sim --verbose)
+          ls -lh target/aarch64-apple-ios-sim/release/librust_lib_vieneu_tts.dylib || ls -lh target/aarch64-apple-ios-sim/release/librust_lib_vieneu_tts.a
+
+      - name: Package iOS archives
         run: |
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
           VERSION="${VERSION#v}"
           mkdir -p dist
           tar -czvf dist/vieneu_tts-ios-arm64-v${VERSION}.tar.gz -C packages/vieneu_tts/rust/target/aarch64-apple-ios/release librust_lib_vieneu_tts.dylib
+          tar -czvf dist/vieneu_tts-ios-arm64-sim-v${VERSION}.tar.gz -C packages/vieneu_tts/rust/target/aarch64-apple-ios-sim/release librust_lib_vieneu_tts.dylib
           cd dist
           (sha256sum vieneu_tts-ios-arm64-v${VERSION}.tar.gz 2>/dev/null || shasum -a 256 vieneu_tts-ios-arm64-v${VERSION}.tar.gz) > vieneu_tts-ios-arm64-v${VERSION}.tar.gz.sha256
+          (sha256sum vieneu_tts-ios-arm64-sim-v${VERSION}.tar.gz 2>/dev/null || shasum -a 256 vieneu_tts-ios-arm64-sim-v${VERSION}.tar.gz) > vieneu_tts-ios-arm64-sim-v${VERSION}.tar.gz.sha256
           ls -lh
 
       - name: Upload iOS artifacts
@@ -266,9 +279,85 @@ jobs:
           path: dist/*
           retention-days: 7
 
+  build-macos:
+    name: Build macOS (arm64 & x86_64) Prebuilts
+    needs: [generate-bindings]
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download FRB Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: /tmp
+
+      - name: Unpack FRB Bindings
+        run: tar -xzvf /tmp/frb_bindings.tar.gz
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Install CMake & Ninja
+        run: brew install cmake ninja
+
+      - name: Configure CMake Helper
+        run: |
+          cat << 'EOF' > /tmp/macos_fix.cmake
+          function(set_xcode_property TARGET XCODE_PROPERTY XCODE_VALUE)
+            set_property(TARGET ${TARGET} PROPERTY XCODE_ATTRIBUTE_${XCODE_PROPERTY} ${XCODE_VALUE})
+          endfunction()
+          EOF
+          echo "CMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/macos_fix.cmake" >> $GITHUB_ENV
+          echo "CMAKE_ARGS=-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/macos_fix.cmake" >> $GITHUB_ENV
+
+      - name: Cargo build for macOS arm64
+        working-directory: packages/vieneu_tts/rust
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/macos_fix.cmake"
+          CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/macos_fix.cmake"
+        run: |
+          git config --global http.version HTTP/1.1
+          git config --global http.postBuffer 524288000
+          cargo build --release --target aarch64-apple-darwin --verbose || (sleep 10 && cargo build --release --target aarch64-apple-darwin --verbose)
+          ls -lh target/aarch64-apple-darwin/release/librust_lib_vieneu_tts.dylib
+
+      - name: Cargo build for macOS x86_64
+        working-directory: packages/vieneu_tts/rust
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/macos_fix.cmake"
+          CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/macos_fix.cmake"
+        run: |
+          cargo build --release --target x86_64-apple-darwin --verbose || (sleep 10 && cargo build --release --target x86_64-apple-darwin --verbose)
+          ls -lh target/x86_64-apple-darwin/release/librust_lib_vieneu_tts.dylib
+
+      - name: Package macOS archives
+        run: |
+          VERSION="${{ github.event.inputs.version || github.ref_name }}"
+          VERSION="${VERSION#v}"
+          mkdir -p dist
+          tar -czvf dist/vieneu_tts-macos-arm64-v${VERSION}.tar.gz -C packages/vieneu_tts/rust/target/aarch64-apple-darwin/release librust_lib_vieneu_tts.dylib
+          tar -czvf dist/vieneu_tts-macos-x64-v${VERSION}.tar.gz -C packages/vieneu_tts/rust/target/x86_64-apple-darwin/release librust_lib_vieneu_tts.dylib
+          cd dist
+          (sha256sum vieneu_tts-macos-arm64-v${VERSION}.tar.gz 2>/dev/null || shasum -a 256 vieneu_tts-macos-arm64-v${VERSION}.tar.gz) > vieneu_tts-macos-arm64-v${VERSION}.tar.gz.sha256
+          (sha256sum vieneu_tts-macos-x64-v${VERSION}.tar.gz 2>/dev/null || shasum -a 256 vieneu_tts-macos-x64-v${VERSION}.tar.gz) > vieneu_tts-macos-x64-v${VERSION}.tar.gz.sha256
+          ls -lh
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-macos
+          path: dist/*
+          retention-days: 7
+
   publish:
     name: Publish Release Artifacts to GitHub
-    needs: [build-linux-x64, build-android, build-ios]
+    needs: [build-linux-x64, build-android, build-ios, build-macos]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish == 'true'
     steps:

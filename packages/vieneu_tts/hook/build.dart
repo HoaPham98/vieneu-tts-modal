@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
@@ -20,10 +19,11 @@ void main(List<String> args) async {
     }
 
     // 1. Resolve Target OS and Architecture
-    final targetOS = input.config.code.targetOS;
-    final targetArch = input.config.code.targetArchitecture;
+    final codeConfig = input.config.code;
+    final targetOS = codeConfig.targetOS;
+    final targetArch = codeConfig.targetArchitecture;
 
-    final targetId = _resolveTargetId(targetOS, targetArch);
+    final targetId = _resolveTargetId(codeConfig);
     if (targetId == null) {
       stderr.writeln(
         'Warning: Target OS $targetOS with architecture $targetArch is not currently supported with prebuilt binaries.',
@@ -118,7 +118,10 @@ void main(List<String> args) async {
   });
 }
 
-String? _resolveTargetId(OS targetOS, Architecture targetArch) {
+String? _resolveTargetId(CodeConfig codeConfig) {
+  final targetOS = codeConfig.targetOS;
+  final targetArch = codeConfig.targetArchitecture;
+
   if (targetOS == OS.linux && targetArch == Architecture.x64) {
     return 'linux-x64';
   }
@@ -129,8 +132,21 @@ String? _resolveTargetId(OS targetOS, Architecture targetArch) {
       return 'android-x64';
     }
   }
-  if (targetOS == OS.iOS) {
-    return 'ios-arm64';
+  if (targetOS == OS.iOS && targetArch == Architecture.arm64) {
+    bool isSim = false;
+    try {
+      isSim = codeConfig.iOS.targetSdk == IOSSdk.iPhoneSimulator;
+    } catch (_) {
+      // Fallback if iOS configuration is unavailable
+    }
+    return isSim ? 'ios-arm64-sim' : 'ios-arm64';
+  }
+  if (targetOS == OS.macOS) {
+    if (targetArch == Architecture.arm64) {
+      return 'macos-arm64';
+    } else if (targetArch == Architecture.x64) {
+      return 'macos-x64';
+    }
   }
   return null;
 }
