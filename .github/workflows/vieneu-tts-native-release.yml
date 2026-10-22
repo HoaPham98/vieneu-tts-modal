@@ -317,7 +317,7 @@ jobs:
       - name: Cargo build for macOS arm64
         working-directory: packages/vieneu_tts/rust
         env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          MACOSX_DEPLOYMENT_TARGET: "13.3"
           CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/macos_fix.cmake"
           CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/macos_fix.cmake"
         run: |
@@ -329,7 +329,7 @@ jobs:
       - name: Cargo build for macOS x86_64
         working-directory: packages/vieneu_tts/rust
         env:
-          MACOSX_DEPLOYMENT_TARGET: "11.0"
+          MACOSX_DEPLOYMENT_TARGET: "13.3"
           CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/macos_fix.cmake"
           CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/macos_fix.cmake"
         run: |
