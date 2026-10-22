@@ -148,6 +148,14 @@ String? _resolveTargetId(CodeConfig codeConfig) {
       return 'macos-x64';
     }
   }
+  if (targetOS == OS.windows) {
+    if (targetArch == Architecture.x64) {
+      return 'windows-x64';
+    } else if (targetArch == Architecture.arm64) {
+      // Windows 11 on ARM natively emulates x64 binaries via Prism
+      return 'windows-x64';
+    }
+  }
   return null;
 }
 
