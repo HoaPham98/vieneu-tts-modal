@@ -254,11 +254,9 @@ jobs:
           VERSION="${{ github.event.inputs.version || github.ref_name }}"
           VERSION="${VERSION#v}"
           mkdir -p dist
-          # Copy whatever was produced (dylib or a)
-          cd packages/vieneu_tts/rust/target/aarch64-apple-ios/release
-          tar -czvf ../../../../../dist/vieneu_tts-ios-arm64-v${VERSION}.tar.gz librust_lib_vieneu_tts.*
-          cd ../../../../../dist
-          sha256sum vieneu_tts-ios-arm64-v${VERSION}.tar.gz > vieneu_tts-ios-arm64-v${VERSION}.tar.gz.sha256
+          tar -czvf dist/vieneu_tts-ios-arm64-v${VERSION}.tar.gz -C packages/vieneu_tts/rust/target/aarch64-apple-ios/release librust_lib_vieneu_tts.dylib
+          cd dist
+          (sha256sum vieneu_tts-ios-arm64-v${VERSION}.tar.gz 2>/dev/null || shasum -a 256 vieneu_tts-ios-arm64-v${VERSION}.tar.gz) > vieneu_tts-ios-arm64-v${VERSION}.tar.gz.sha256
           ls -lh
 
       - name: Upload iOS artifacts
