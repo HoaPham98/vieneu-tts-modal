@@ -239,10 +239,10 @@ jobs:
       - name: Cargo build for iOS device
         working-directory: packages/vieneu_tts/rust
         env:
-          IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+          IPHONEOS_DEPLOYMENT_TARGET: "17.0"
           CMAKE_PROJECT_TOP_LEVEL_INCLUDES: "/tmp/ios_fix.cmake"
           CMAKE_ARGS: "-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/tmp/ios_fix.cmake"
-          RUSTFLAGS: "-C link-arg=-miphoneos-version-min=16.0 -C link-arg=-framework -C link-arg=Accelerate -C link-arg=-framework -C link-arg=Metal -C link-arg=-framework -C link-arg=MetalKit -C link-arg=-framework -C link-arg=Foundation"
+          RUSTFLAGS: "-C link-arg=-miphoneos-version-min=17.0 -C link-arg=-framework -C link-arg=Accelerate -C link-arg=-framework -C link-arg=Metal -C link-arg=-framework -C link-arg=MetalKit -C link-arg=-framework -C link-arg=Foundation"
         run: |
           git config --global http.version HTTP/1.1
           git config --global http.postBuffer 524288000
