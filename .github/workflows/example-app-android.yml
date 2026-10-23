@@ -64,9 +64,11 @@ jobs:
       - name: Check prebuilt readiness
         id: check-prebuilts
         run: |
-          if [ "${{ steps.cache-prebuilts.outputs.cache-hit }}" == "true" ] && [ "${{ steps.cache-bindings.outputs.cache-hit }}" == "true" ] && [ -f "dist/vieneu_tts-android-arm64-v0.1.0.tar.gz" ] && [ -f "dist/vieneu_tts-android-x64-v0.1.0.tar.gz" ]; then
+          VERSION=$(grep -E '^version:' packages/vieneu_tts/pubspec.yaml | awk '{print $2}' | tr -d '\r')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          if [ "${{ steps.cache-prebuilts.outputs.cache-hit }}" == "true" ] && [ "${{ steps.cache-bindings.outputs.cache-hit }}" == "true" ] && [ -f "dist/vieneu_tts-android-arm64-v${VERSION}.tar.gz" ] && [ -f "dist/vieneu_tts-android-x64-v${VERSION}.tar.gz" ]; then
             echo "ready=true" >> $GITHUB_OUTPUT
-            echo "✓ Prebuilt native archives exactly matched cache!"
+            echo "✓ Prebuilt native archives for v${VERSION} exactly matched cache!"
           else
             echo "ready=false" >> $GITHUB_OUTPUT
             echo "Cache miss or Rust code modified: compiling native prebuilt archives from source..."
@@ -75,14 +77,17 @@ jobs:
 
       - name: Setup Rust toolchain
         if: steps.check-prebuilts.outputs.ready != 'true'
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: aarch64-linux-android, x86_64-linux-android
 
-      - name: Install flutter_rust_bridge_codegen
+      - name: Install flutter_rust_bridge_codegen v2.13.0
         if: steps.check-prebuilts.outputs.ready != 'true'
         run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.13.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.13.0.tgz | sudo tar -xz -C /usr/local/bin || \
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.13.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu.tar.gz | sudo tar -xz -C /usr/local/bin || \
+          cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
           flutter_rust_bridge_codegen --version
 
       - name: Generate Bindings
@@ -97,7 +102,7 @@ jobs:
         if: steps.check-prebuilts.outputs.ready != 'true'
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26b
+          ndk-version: r28
           add-to-path: true
 
       - name: Install cargo-ndk
@@ -131,12 +136,12 @@ jobs:
 
           cd ../../..
           mkdir -p dist
-          tar -czvf dist/vieneu_tts-android-arm64-v0.1.0.tar.gz -C packages/vieneu_tts/android_build/arm64-v8a librust_lib_vieneu_tts.so libc++_shared.so
-          tar -czvf dist/vieneu_tts-android-x64-v0.1.0.tar.gz -C packages/vieneu_tts/android_build/x86_64 librust_lib_vieneu_tts.so libc++_shared.so
+          tar -czvf "dist/vieneu_tts-android-arm64-v${VERSION}.tar.gz" -C packages/vieneu_tts/android_build/arm64-v8a librust_lib_vieneu_tts.so libc++_shared.so
+          tar -czvf "dist/vieneu_tts-android-x64-v${VERSION}.tar.gz" -C packages/vieneu_tts/android_build/x86_64 librust_lib_vieneu_tts.so libc++_shared.so
 
           cd dist
-          sha256sum vieneu_tts-android-arm64-v0.1.0.tar.gz > vieneu_tts-android-arm64-v0.1.0.tar.gz.sha256
-          sha256sum vieneu_tts-android-x64-v0.1.0.tar.gz > vieneu_tts-android-x64-v0.1.0.tar.gz.sha256
+          sha256sum "vieneu_tts-android-arm64-v${VERSION}.tar.gz" > "vieneu_tts-android-arm64-v${VERSION}.tar.gz.sha256"
+          sha256sum "vieneu_tts-android-x64-v${VERSION}.tar.gz" > "vieneu_tts-android-x64-v${VERSION}.tar.gz.sha256"
           ls -lh
 
       - name: Start Mock Artifact Server
@@ -144,8 +149,9 @@ jobs:
           mkdir -p dist
           nohup python3 -m http.server 8080 --directory dist > /tmp/artifact_server.log 2>&1 &
           sleep 2
-          curl -I http://127.0.0.1:8080/vieneu_tts-android-arm64-v0.1.0.tar.gz
+          curl -I "http://127.0.0.1:8080/vieneu_tts-android-arm64-v${VERSION}.tar.gz"
           echo "VIENEU_TTS_BINARY_URL=http://127.0.0.1:8080" >> $GITHUB_ENV
+          echo "VIENEU_TTS_BUILD_MODE=prebuilt" >> $GITHUB_ENV
 
       - name: PURGE Rust and Android NDK toolchains
         run: |
@@ -180,10 +186,13 @@ jobs:
 
       - name: Install dependencies & analyze packages
         env:
+          VIENEU_TTS_BUILD_MODE: "prebuilt"
           VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
         run: |
           cd packages/vieneu_tts
           dart pub get
+          mkdir -p .dart_tool
+          printf "VIENEU_TTS_BUILD_MODE=prebuilt\nVIENEU_TTS_BINARY_URL=http://127.0.0.1:8080\n" > .dart_tool/vieneu_tts_env
           cd ../flutter_vieneu_tts
           flutter pub get
           flutter analyze
@@ -227,6 +236,7 @@ jobs:
 
       - name: Run On-Device Integration Test on Android Emulator (Prebuilt Binaries)
         env:
+          VIENEU_TTS_BUILD_MODE: "prebuilt"
           VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -240,10 +250,11 @@ jobs:
 
       - name: Build Android Release APK (Zero-Rust Consumer Verification)
         env:
+          VIENEU_TTS_BUILD_MODE: "prebuilt"
           VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
         working-directory: packages/flutter_vieneu_tts/example
         run: |
-          if ! curl -s -I http://127.0.0.1:8080/vieneu_tts-android-arm64-v0.1.0.tar.gz > /dev/null; then
+          if ! curl -s -I "http://127.0.0.1:8080/vieneu_tts-android-arm64-v${VERSION}.tar.gz" > /dev/null; then
             echo "Mock artifact server not responding, starting it on port 8080..."
             nohup python3 -m http.server 8080 --directory "$GITHUB_WORKSPACE/dist" > /tmp/artifact_server.log 2>&1 &
             sleep 2

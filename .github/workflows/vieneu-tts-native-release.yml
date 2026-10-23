@@ -30,6 +30,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Verify Version & Tag Parity
+        run: |
+          EXPECTED_VER="${{ github.event.inputs.version || github.ref_name }}"
+          EXPECTED_VER="${EXPECTED_VER#v}"
+          PUBSPEC_VER=$(grep -E '^version:' packages/vieneu_tts/pubspec.yaml | awk '{print $2}' | tr -d '\r')
+          CARGO_VER=$(grep -E '^version\s*=' packages/vieneu_tts/rust/Cargo.toml | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' | tr -d '\r')
+          echo "Target Release Version : $EXPECTED_VER"
+          echo "pubspec.yaml Version   : $PUBSPEC_VER"
+          echo "Cargo.toml Version     : $CARGO_VER"
+          if [ "$EXPECTED_VER" != "$PUBSPEC_VER" ]; then
+            echo "::error::Version mismatch! Tag/input version ($EXPECTED_VER) does not match packages/vieneu_tts/pubspec.yaml ($PUBSPEC_VER)."
+            exit 1
+          fi
+          if [ "$EXPECTED_VER" != "$CARGO_VER" ]; then
+            echo "::error::Version mismatch! Tag/input version ($EXPECTED_VER) does not match packages/vieneu_tts/rust/Cargo.toml ($CARGO_VER)."
+            exit 1
+          fi
+          echo "✓ Version parity verified ($EXPECTED_VER)"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
@@ -42,9 +66,11 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install flutter_rust_bridge_codegen
+      - name: Install flutter_rust_bridge_codegen v2.13.0
         run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.13.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.13.0.tgz | sudo tar -xz -C /usr/local/bin || \
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.13.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu.tar.gz | sudo tar -xz -C /usr/local/bin || \
+          cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
           flutter_rust_bridge_codegen --version
 
       - name: Generate Bindings
@@ -90,8 +116,9 @@ jobs:
         run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: x86_64-unknown-linux-gnu
 
       - name: Install build tools (CMake, Ninja, ALSA)
@@ -143,14 +170,15 @@ jobs:
         run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: aarch64-linux-android, x86_64-linux-android
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26b
+          ndk-version: r28
           add-to-path: true
 
       - name: Install cargo-ndk & CMake
@@ -219,8 +247,9 @@ jobs:
         run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: aarch64-apple-ios, aarch64-apple-ios-sim
 
       - name: Install CMake & Ninja
@@ -297,8 +326,9 @@ jobs:
         run: tar -xzvf /tmp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: aarch64-apple-darwin, x86_64-apple-darwin
 
       - name: Install CMake & Ninja
@@ -374,8 +404,9 @@ jobs:
         run: tar -xzvf frb_temp/frb_bindings.tar.gz
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: x86_64-pc-windows-msvc
 
       - name: Enable Windows Long Paths

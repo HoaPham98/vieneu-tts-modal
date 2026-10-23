@@ -22,7 +22,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
 
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
@@ -30,9 +32,11 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install flutter_rust_bridge_codegen
+      - name: Install flutter_rust_bridge_codegen v2.13.0
         run: |
-          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.0.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.0.0.tgz | sudo tar -xz -C /usr/local/bin
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.13.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu-v2.13.0.tgz | sudo tar -xz -C /usr/local/bin || \
+          curl -sSfL https://github.com/fzyzcjy/flutter_rust_bridge/releases/download/v2.13.0/flutter_rust_bridge_codegen-x86_64-unknown-linux-gnu.tar.gz | sudo tar -xz -C /usr/local/bin || \
+          cargo install flutter_rust_bridge_codegen --version 2.13.0 --locked
           flutter_rust_bridge_codegen --version
 
       - name: Generate Bindings
@@ -52,7 +56,7 @@ jobs:
           retention-days: 1
 
   dart-lint:
-    name: Dart Analysis & Lint
+    name: Dart Analysis & Hook Unit Tests
     needs: [codegen]
     runs-on: ubuntu-latest
     defaults:
@@ -78,12 +82,140 @@ jobs:
       - name: Install dependencies
         run: |
           flutter pub get
+          cd ../flutter_vieneu_tts && flutter pub get
           cd example && flutter pub get
 
-      - name: Analyze code and run package tests
+      - name: Analyze code and run build hook unit tests
         run: |
           flutter analyze
+          mkdir -p .dart_tool
+          touch .dart_tool/mock_lib.so
+          printf "VIENEU_TTS_BUILD_MODE=prebuilt\nVIENEU_TTS_LOCAL_LIB=%s/.dart_tool/mock_lib.so\n" "$(pwd)" > .dart_tool/vieneu_tts_env
+          dart test test/build_hook_test.dart --verbose
+          rm -f .dart_tool/vieneu_tts_env .dart_tool/mock_lib.so
+
+  test-hook-source-mode:
+    name: Test Hook in Source Mode (VIENEU_TTS_BUILD_MODE=source)
+    needs: [codegen]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: packages/vieneu_tts
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Install build tools (CMake, Ninja, ALSA)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build libasound2-dev
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/vieneu_tts/rust
+
+      - name: Run tests with VIENEU_TTS_BUILD_MODE=source
+        env:
+          VIENEU_TTS_BUILD_MODE: "source"
+        run: |
+          flutter pub get
+          mkdir -p .dart_tool
+          echo "VIENEU_TTS_BUILD_MODE=source" > .dart_tool/vieneu_tts_env
           flutter test --verbose
+          rm -f .dart_tool/vieneu_tts_env
+
+      - name: Package built Linux library for prebuilt-mode job
+        working-directory: ${{ github.workspace }}
+        run: |
+          VERSION=$(grep -E '^version:' packages/vieneu_tts/pubspec.yaml | awk '{print $2}' | tr -d '\r')
+          SO_PATH=$(find packages/vieneu_tts/.dart_tool /tmp -name "librust_lib_vieneu_tts.so" 2>/dev/null | head -n 1)
+          if [ -z "$SO_PATH" ]; then
+            echo "Building release library for archive..."
+            (cd packages/vieneu_tts/rust && cargo build --release)
+            SO_PATH="packages/vieneu_tts/rust/target/release/librust_lib_vieneu_tts.so"
+          fi
+          mkdir -p dist
+          cp "$SO_PATH" dist/librust_lib_vieneu_tts.so
+          tar -czvf "dist/vieneu_tts-linux-x64-v${VERSION}.tar.gz" -C dist librust_lib_vieneu_tts.so
+          rm -f dist/librust_lib_vieneu_tts.so
+          (cd dist && sha256sum "vieneu_tts-linux-x64-v${VERSION}.tar.gz" > "vieneu_tts-linux-x64-v${VERSION}.tar.gz.sha256")
+          ls -lh dist/
+
+      - name: Upload Linux Prebuilt Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-prebuilt-dist
+          path: dist/*
+          retention-days: 1
+
+  test-hook-prebuilt-mode:
+    name: Test Hook in Prebuilt Mode (VIENEU_TTS_BUILD_MODE=prebuilt, Zero-Rust)
+    needs: [codegen, test-hook-source-mode]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/vieneu_tts
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Generated Bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: frb-bindings
+          path: packages/vieneu_tts
+
+      - name: Download Linux Prebuilt Archive
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-prebuilt-dist
+          path: dist
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Purge Rust Toolchain (Zero-Rust Consumer Simulation)
+        run: |
+          sudo rm -rf /home/runner/.cargo /home/runner/.rustup /usr/share/rust /usr/local/cargo
+          export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v 'cargo' | tr '\n' ':')
+          echo "PATH=$PATH" >> $GITHUB_ENV
+
+      - name: Serve Prebuilt Archive & Run Tests in Prebuilt Mode
+        env:
+          VIENEU_TTS_BUILD_MODE: "prebuilt"
+          VIENEU_TTS_BINARY_URL: "http://127.0.0.1:8080"
+        run: |
+          nohup python3 -m http.server 8080 --directory "${{ github.workspace }}/dist" > /tmp/prebuilt_server.log 2>&1 &
+          sleep 2
+          flutter pub get
+          mkdir -p .dart_tool
+          printf "VIENEU_TTS_BUILD_MODE=prebuilt\nVIENEU_TTS_BINARY_URL=http://127.0.0.1:8080\n" > .dart_tool/vieneu_tts_env
+          flutter test --verbose
+          rm -f .dart_tool/vieneu_tts_env
 
   rust-check:
     name: Rust Bridge & audio-cpp Check
@@ -104,8 +236,9 @@ jobs:
           path: packages/vieneu_tts
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: x86_64-unknown-linux-gnu
 
       - name: Install build tools (CMake, Ninja)
@@ -140,14 +273,15 @@ jobs:
           path: packages/vieneu_tts
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: aarch64-linux-android
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         with:
-          ndk-version: r26b
+          ndk-version: r28
           add-to-path: true
 
       - name: Install cargo-ndk
@@ -160,6 +294,9 @@ jobs:
         run: |
           mkdir -p ../android/src/main/jniLibs
           cargo ndk -t arm64-v8a -o ../android/src/main/jniLibs build --release --verbose
+          NDK_DIR=$(find /usr/local/lib/android/sdk/ndk -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -V | tail -n 1)
+          ARM64_LIBCXX=$(find "$NDK_DIR" -path "*/aarch64-linux-android*/libc++_shared.so" 2>/dev/null | head -n 1)
+          cp "$ARM64_LIBCXX" ../android/src/main/jniLibs/arm64-v8a/
           ls -lh ../android/src/main/jniLibs/arm64-v8a/
 
       - name: Upload Android jniLibs
@@ -188,8 +325,9 @@ jobs:
           path: packages/vieneu_tts
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.93.1"
           targets: aarch64-apple-ios, aarch64-apple-ios-sim
 
       - name: Install CMake and Ninja
@@ -206,7 +344,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: packages/vieneu_tts/example
+        working-directory: packages/flutter_vieneu_tts/example
 
     steps:
       - name: Checkout repository
@@ -224,6 +362,14 @@ jobs:
           name: android-jnilibs
           path: packages/vieneu_tts/android/src/main/jniLibs
 
+      - name: Package Android prebuilt archive for hook resolution
+        working-directory: ${{ github.workspace }}
+        run: |
+          VERSION=$(grep -E '^version:' packages/vieneu_tts/pubspec.yaml | awk '{print $2}' | tr -d '\r')
+          mkdir -p dist
+          tar -czvf "dist/vieneu_tts-android-arm64-v${VERSION}.tar.gz" -C packages/vieneu_tts/android/src/main/jniLibs/arm64-v8a librust_lib_vieneu_tts.so libc++_shared.so
+          (cd dist && sha256sum "vieneu_tts-android-arm64-v${VERSION}.tar.gz" > "vieneu_tts-android-arm64-v${VERSION}.tar.gz.sha256")
+
       - name: Setup Java JDK
         uses: actions/setup-java@v5
         with:
@@ -236,9 +382,11 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install root dependencies
-        working-directory: packages/vieneu_tts
-        run: flutter pub get
+      - name: Install root & plugin dependencies
+        working-directory: ${{ github.workspace }}
+        run: |
+          (cd packages/vieneu_tts && flutter pub get)
+          (cd packages/flutter_vieneu_tts && flutter pub get)
 
       - name: Install example dependencies
         run: flutter pub get
@@ -248,15 +396,14 @@ jobs:
           flutter analyze
           flutter test test/app_test.dart --verbose
 
-      - name: Stage native libraries for Android app packaging
+      - name: Build Android Release APK (arm64-v8a via Prebuilt Mode)
+        env:
+          VIENEU_TTS_BUILD_MODE: "prebuilt"
         run: |
-          mkdir -p android/app/src/main/jniLibs
-          cp -r ../android/src/main/jniLibs/* android/app/src/main/jniLibs/
-          ls -laR android/app/src/main/jniLibs/
-
-      - name: Build Android Release APK (arm64-v8a)
-        run: |
+          mkdir -p ../../vieneu_tts/.dart_tool
+          echo "VIENEU_TTS_BUILD_MODE=prebuilt" > ../../vieneu_tts/.dart_tool/vieneu_tts_env
           flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
+          rm -f ../../vieneu_tts/.dart_tool/vieneu_tts_env
 
       - name: Verify APK Integrity & Embedded Native Libraries
         run: |
@@ -280,7 +427,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vieneu-tts-android-apk
-          path: packages/vieneu_tts/example/build/app/outputs/flutter-apk/app-release.apk
+          path: packages/flutter_vieneu_tts/example/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
 
   e2e-synthesis:
@@ -309,7 +456,9 @@ jobs:
           cache: true
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.93.1"
 
       - name: Install CMake, Ninja & Audio libraries
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libasound2-dev curl
@@ -325,7 +474,7 @@ jobs:
         run: |
           flutter pub get
           flutter test
-          cd example && flutter pub get && flutter test
+          cd ../flutter_vieneu_tts/example && flutter pub get && flutter test
 
       - name: Run E2E Audio Synthesis & Streaming Test
         working-directory: packages/vieneu_tts/rust

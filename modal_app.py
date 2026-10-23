@@ -111,28 +111,56 @@ def _emotion_tag_token(tag: str) -> Optional[str]:
     return f"<|emotion_{k}|>" if k is not None else None
 
 
+def normalize_text_for_tts(text: str) -> str:
+    """
+    Chuẩn hóa văn bản tiếng Việt trước khi đưa vào mô hình TTS:
+    - Loại bỏ ký tự tàng hình (zero-width characters: \\u200b, \\ufeff, etc.)
+    - Chuẩn hóa khoảng trắng ngang dư thừa
+    - Thay thế các dấu ngắt lơ lửng ở cuối văn bản hoặc trước dòng ngắt đoạn
+      (như dấu phẩy, hai chấm, chấm phẩy, gạch ngang) bằng dấu chấm để tránh
+      mô hình tự hồi quy bị lặp từ (hallucination / looping) hoặc treo giọng.
+    - Đảm bảo câu luôn kết thúc bằng dấu câu dứt khoát (. ! ? …).
+    """
+    if not text:
+        return ""
+    text = re.sub(r"[\u200b\u200c\u200d\ufeff\u2060]", "", text)
+    text = re.sub(r"[ \t]+", " ", text).strip()
+    text = re.sub(r"[,;:\-–—~]+(\s*\n\s*\n|$)", r".\1", text).strip()
+    if text and not any(text.endswith(p) for p in ".!?…"):
+        text += "."
+    return text
+
+
 @functools.lru_cache(maxsize=1024)
 def phonemize_vietnamese(text: str) -> str:
     """Chuyển đổi văn bản tiếng Việt sang chuỗi âm vị IPA mà mô hình VieNeu-TTS yêu cầu."""
+    text = normalize_text_for_tts(text)
+    if not text:
+        return ""
+
     pipeline = get_pipeline()
     tokens = _EMOTION_SPLIT_RE.split(text)
     if len(tokens) == 1:
-        return pipeline.run(text, punc_norm=True)
+        res = pipeline.run(text, punc_norm=True).strip()
+    else:
+        parts = []
+        for token in tokens:
+            if not token:
+                continue
+            em_tok = _emotion_tag_token(token)
+            if em_tok is not None:
+                parts.append(em_tok)
+            else:
+                ph = pipeline.run(token, punc_norm=False).strip()
+                if ph:
+                    parts.append(ph)
+        res = " ".join(parts).strip()
 
-    parts = []
-    for token in tokens:
-        if not token:
-            continue
-        em_tok = _emotion_tag_token(token)
-        if em_tok is not None:
-            parts.append(em_tok)
-        else:
-            ph = pipeline.run(token, punc_norm=False).strip()
-            if ph:
-                parts.append(ph)
-
-    res = " ".join(parts).strip()
-    if res and not any(res.endswith(p) for p in ".,!?;:…"):
+    # Chuẩn hóa chuỗi âm vị IPA:
+    # 1. Loại bỏ các dấu phẩy, chấm phẩy, hai chấm, gạch ngang lơ lửng ở cuối chuỗi âm vị
+    res = re.sub(r"[,;:\-–—~\s]+$", "", res).strip()
+    # 2. Đảm bảo âm vị kết thúc bằng dấu ngắt câu dứt khoát (. ! ? …)
+    if res and not any(res.endswith(p) for p in ".!?…"):
         res += "."
     return res
 
@@ -423,8 +451,22 @@ class AudioCppService:
                 backend_payload["options"]["reference_codes_file"] = voice_meta["codes_file"]
                 backend_payload["options"]["speaker_embedding_file"] = voice_meta["emb_file"]
 
+            if req.temperature is not None:
+                backend_payload["options"]["temperature"] = req.temperature
+            if req.top_k is not None:
+                backend_payload["options"]["top_k"] = req.top_k
+            if req.top_p is not None:
+                backend_payload["options"]["top_p"] = req.top_p
+            if req.repetition_penalty is not None:
+                backend_payload["options"]["repetition_penalty"] = req.repetition_penalty
+            if req.options and isinstance(req.options, dict):
+                for k, v in req.options.items():
+                    if k not in backend_payload["options"]:
+                        backend_payload["options"][k] = v
+
             if req.speed and abs(req.speed - 1.0) > 1e-3:
                 backend_payload["speed"] = req.speed
+
 
             accept_header = request.headers.get("accept", "").lower()
             is_sse = (req.stream_format == "sse") or ("text/event-stream" in accept_header)

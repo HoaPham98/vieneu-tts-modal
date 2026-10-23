@@ -4,7 +4,9 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use hound::WavReader;
-use rust_lib_vieneu_tts::api::{dispose_engine, init_engine, synthesize_speech};
+use rust_lib_vieneu_tts::api::{
+    dispose_engine, init_engine, synthesize_speech, SynthesisOptions,
+};
 
 fn main() -> Result<()> {
     let model_path = std::env::var("MODEL_PATH")
@@ -50,8 +52,13 @@ fn main() -> Result<()> {
     println!("\n[2/4] Synthesizing speech (Voice: minh_quan_pro)...");
     println!("Text: \"{}\"", text_1);
     let synth_start = Instant::now();
-    let wav_1 = synthesize_speech(text_1.to_string(), "minh_quan_pro".to_string(), 1.0)
-        .context("Failed to synthesize speech for minh_quan_pro")?;
+    let wav_1 = synthesize_speech(
+        text_1.to_string(),
+        "minh_quan_pro".to_string(),
+        1.0,
+        None,
+    )
+    .context("Failed to synthesize speech for minh_quan_pro")?;
     let synth_duration = synth_start.elapsed();
     println!("✓ Synthesized {} bytes in {:.2?}", wav_1.len(), synth_duration);
 
@@ -59,12 +66,20 @@ fn main() -> Result<()> {
     fs::write(&path_1, &wav_1)?;
     print_wav_info(&path_1)?;
 
-    // 3. Synthesize with Ngoc Huyen (Female - Northern)
+    // 3. Synthesize with Ngoc Huyen (Female - Northern) using a display name and a
+    //    lower-fidelity 16 kHz mono container to exercise the new synthesis options.
     let text_2 = "Hôm nay thời tiết rất đẹp, chúc bạn một ngày làm việc hiệu quả và tràn đầy niềm vui.";
-    println!("\n[3/4] Synthesizing speech (Voice: ngoc_huyen)...");
+    println!("\n[3/4] Synthesizing speech (Voice: 'Ngọc Huyền', 16 kHz mono)...");
     println!("Text: \"{}\"", text_2);
     let synth_start = Instant::now();
-    let wav_2 = synthesize_speech(text_2.to_string(), "ngoc_huyen".to_string(), 1.0)
+    let options = SynthesisOptions {
+        voice: Some("Ngọc Huyền".to_string()),
+        sample_rate: Some(16_000),
+        channels: Some(1),
+        response_format: Some("wav".to_string()),
+        ..Default::default()
+    };
+    let wav_2 = synthesize_speech(text_2.to_string(), "ngoc_huyen".to_string(), 1.0, Some(options))
         .context("Failed to synthesize speech for ngoc_huyen")?;
     println!("✓ Synthesized {} bytes in {:.2?}", wav_2.len(), synth_start.elapsed());
 

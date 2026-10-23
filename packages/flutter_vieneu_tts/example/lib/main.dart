@@ -265,6 +265,9 @@ class _TtsHomePageState extends State<TtsHomePage> {
           text: text,
           voice: _selectedVoice,
           speed: _speechSpeed,
+          // Raw PCM (the stream default) has no container header, so request a
+          // WAV container here since the chunks are buffered and played as one blob.
+          responseFormat: AudioFormat.wav,
         )) {
           chunks.addAll(chunk);
           if (mounted) {
